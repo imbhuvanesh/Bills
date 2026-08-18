@@ -107,34 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadBills() async {
     final saved = await StorageService().loadBills();
     if (saved.isEmpty) {
-      setState(() {
-        bills.addAll([
-          Bill(
-            title: 'Electricity',
-            description: 'Home electricity bill',
-            amount: 1450,
-            dueDate: DateTime(2026, 8, 23),
-            iconCodePoint: Icons.bolt_rounded.codePoint,
-          ),
-
-          Bill(
-            title: 'Internet',
-            description: 'Monthly broadband payment',
-            amount: 899,
-            dueDate: DateTime(2026, 8, 20),
-            iconCodePoint: Icons.wifi_rounded.codePoint,
-          ),
-
-          Bill(
-            title: 'Netflix',
-            description: 'Monthly subscription',
-            amount: 649,
-            dueDate: DateTime(2026, 8, 28),
-            iconCodePoint: Icons.movie_outlined.codePoint,
-          ),
-        ]);
-      });
-      await _saveAllBills();
+      // No saved bills — leave the list empty.
       return;
     }
 
