@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:bills/services/storage_service.dart';
 import 'package:bills/services/notification_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +34,6 @@ class BillsApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF080A0F),
         textTheme: GoogleFonts.googleSansTextTheme(ThemeData.dark().textTheme),
       ),
-
       home: const HomeScreen(),
     );
   }
@@ -96,6 +96,24 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final List<Bill> bills = [];
+
+  Future<void> _openSupportEmail() async {
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: 'iambhuvanesh.a@gmail.com',
+      queryParameters: {'subject': 'Support request - Bills app'},
+    );
+
+    try {
+      await launchUrl(emailUri);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open email client')),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -489,6 +507,35 @@ class _HomeScreenState extends State<HomeScreen> {
               'Add Bill',
               style: GoogleFonts.googleSans(fontWeight: FontWeight.w600),
             ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: _openSupportEmail,
+                child: Text(
+                  'Support',
+                  style: GoogleFonts.googleSans(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Developed by Bhuvy',
+                style: GoogleFonts.googleSans(
+                  fontSize: 12,
+                  color: Colors.white54,
+                ),
+              ),
+            ],
           ),
         ),
       ),
