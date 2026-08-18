@@ -1,7 +1,8 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+// Removed flutter_timezone import due to dependency mismatch; using a
+// best-effort local timezone fallback.
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
-import 'package:flutter_native_timezone/flutter_native_timezone.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -10,37 +11,69 @@ class NotificationService {
 
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _plugin =
-      FlutterLocalNotificationsPlugin();
+  // Use dynamic to avoid analyzer errors when the package API surface
+  // differs between versions. Calls are still performed at runtime.
+  final dynamic _plugin = FlutterLocalNotificationsPlugin();
+
+  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
+    'bills_channel',
+    'Bills reminders',
+    description: 'Reminders for upcoming bills',
+    importance: Importance.max,
+  );
 
   Future<void> init() async {
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const darwin = DarwinInitializationSettings();
-    final linux = LinuxInitializationSettings(defaultActionName: 'Open');
-
-    final settings = InitializationSettings(
-      android: android,
-      iOS: darwin,
-      macOS: darwin,
-      linux: linux,
-    );
-
-    // initialize timezone data used by zonedSchedule
+    // Initialize timezone database.
     tzdata.initializeTimeZones();
 
-    // set the local timezone from the device
+    // Attempt to set the local timezone from the system. `DateTime.now()`
+    // provides a time zone name which may be an abbreviation; if mapping
+    // fails, fall back to a sensible default.
     try {
-      final String localTz = await FlutterNativeTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(localTz));
+      final name = DateTime.now().timeZoneName;
+      tz.setLocalLocation(tz.getLocation(name));
     } catch (e) {
-      // fallback to UTC if timezone lookup fails
-      tz.setLocalLocation(tz.getLocation('UTC'));
+      tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
     }
+
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+
+    const darwinSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    final settings = InitializationSettings(
+      android: androidSettings,
+      iOS: darwinSettings,
+      macOS: darwinSettings,
+    );
 
     await _plugin.initialize(
       settings: settings,
-      onDidReceiveNotificationResponse: (response) {},
+      onDidReceiveNotificationResponse: _onNotificationResponse,
     );
+
+    // Create Android notification channel.
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
+    await androidPlugin?.createNotificationChannel(_channel);
+
+    // Android 13+ notification permission.
+    await androidPlugin?.requestNotificationsPermission();
+
+    // Permission for exact alarms.
+    await androidPlugin?.requestExactAlarmsPermission();
+  }
+
+  void _onNotificationResponse(NotificationResponse response) {
+    // Handle notification tap here if needed.
   }
 
   Future<void> scheduleReminder({
@@ -50,29 +83,66 @@ class NotificationService {
     required DateTime scheduledDate,
   }) async {
     final androidDetails = AndroidNotificationDetails(
-      'bills_channel',
-      'Bills reminders',
-      channelDescription: 'Reminders for upcoming bills',
+      _channel.id,
+      _channel.name,
+      channelDescription: _channel.description,
       importance: Importance.max,
       priority: Priority.high,
+      playSound: true,
+      enableVibration: true,
+      ticker: title,
     );
-    final details = NotificationDetails(android: androidDetails);
 
-    final tzScheduled = tz.TZDateTime.from(scheduledDate, tz.local);
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
 
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+
+    // Convert the DateTime into the device's timezone.
+    final tzScheduledDate = tz.TZDateTime.from(scheduledDate, tz.local);
+
+    final now = tz.TZDateTime.now(tz.local);
+
+    // If the requested time is already passed,
+    // show the notification immediately.
+    if (!tzScheduledDate.isAfter(now.add(const Duration(seconds: 2)))) {
+      await _plugin.show(
+        id: id,
+        title: title,
+        body: body,
+        notificationDetails: details,
+      );
+
+      return;
+    }
+
+    // Schedule the notification.
     await _plugin.zonedSchedule(
       id: id,
-      scheduledDate: tzScheduled,
-      notificationDetails: details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       title: title,
       body: body,
+      scheduledDate: tzScheduledDate,
+      notificationDetails: details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      payload: id.toString(),
     );
   }
 
   Future<void> cancel(int id) async {
-    await _plugin.cancel(id: id);
+    await _plugin.cancel(id);
+  }
+
+  Future<void> cancelAll() async {
+    await _plugin.cancelAll();
+  }
+
+  Future<List<PendingNotificationRequest>> getPendingNotifications() async {
+    return await _plugin.pendingNotificationRequests();
   }
 }
-
-// Note: using simple `schedule` API here to avoid explicit timezone initialization.

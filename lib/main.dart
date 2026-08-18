@@ -31,7 +31,7 @@ class BillsApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF080A0F),
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+        textTheme: GoogleFonts.googleSansTextTheme(ThemeData.dark().textTheme),
       ),
 
       home: const HomeScreen(),
@@ -48,7 +48,7 @@ class Bill {
   String description;
   double amount;
   DateTime dueDate;
-  IconData icon;
+  int iconCodePoint;
   bool reminderEnabled;
 
   Bill({
@@ -56,7 +56,7 @@ class Bill {
     required this.description,
     required this.amount,
     required this.dueDate,
-    required this.icon,
+    required this.iconCodePoint,
     this.reminderEnabled = false,
   });
 
@@ -66,7 +66,7 @@ class Bill {
       'description': description,
       'amount': amount,
       'dueDate': dueDate.toIso8601String(),
-      'iconCodePoint': icon.codePoint,
+      'iconCodePoint': iconCodePoint,
       'reminderEnabled': reminderEnabled,
     };
   }
@@ -77,7 +77,7 @@ class Bill {
       description: m['description'] as String,
       amount: (m['amount'] as num).toDouble(),
       dueDate: DateTime.parse(m['dueDate'] as String),
-      icon: IconData(m['iconCodePoint'] as int, fontFamily: 'MaterialIcons'),
+      iconCodePoint: m['iconCodePoint'] as int,
       reminderEnabled: m['reminderEnabled'] as bool? ?? false,
     );
   }
@@ -114,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
             description: 'Home electricity bill',
             amount: 1450,
             dueDate: DateTime(2026, 8, 23),
-            icon: Icons.bolt_rounded,
+            iconCodePoint: Icons.bolt_rounded.codePoint,
           ),
 
           Bill(
@@ -122,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
             description: 'Monthly broadband payment',
             amount: 899,
             dueDate: DateTime(2026, 8, 20),
-            icon: Icons.wifi_rounded,
+            iconCodePoint: Icons.wifi_rounded.codePoint,
           ),
 
           Bill(
@@ -130,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
             description: 'Monthly subscription',
             amount: 649,
             dueDate: DateTime(2026, 8, 28),
-            icon: Icons.movie_outlined,
+            iconCodePoint: Icons.movie_outlined.codePoint,
           ),
         ]);
       });
@@ -254,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Text(
                               'Bills',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.googleSans(
                                 fontSize: 32,
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -1,
@@ -265,7 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             Text(
                               'Keep your payments on track',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.googleSans(
                                 fontSize: 14,
                                 color: Colors.white54,
                               ),
@@ -328,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Text(
                                 'Total upcoming',
-                                style: GoogleFonts.inter(
+                                style: GoogleFonts.googleSans(
                                   fontSize: 13,
                                   color: Colors.white54,
                                 ),
@@ -338,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                               Text(
                                 '₹${totalAmount.toStringAsFixed(0)}',
-                                style: GoogleFonts.inter(
+                                style: GoogleFonts.googleSans(
                                   fontSize: 26,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -361,7 +361,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           child: Text(
                             '${bills.length} bills',
-                            style: GoogleFonts.inter(
+                            style: GoogleFonts.googleSans(
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
                               color: Colors.white70,
@@ -385,7 +385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       Text(
                         'Upcoming bills',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.googleSans(
                           fontSize: 19,
                           fontWeight: FontWeight.w600,
                         ),
@@ -395,7 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       Text(
                         '${bills.length}',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.googleSans(
                           fontSize: 14,
                           color: Colors.white38,
                         ),
@@ -467,7 +467,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                   await _saveAllBills();
 
-                                  if (!mounted) return;
+                                  if (!context.mounted) return;
 
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
@@ -514,7 +514,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
             label: Text(
               'Add Bill',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+              style: GoogleFonts.googleSans(fontWeight: FontWeight.w600),
             ),
           ),
         ),
@@ -594,7 +594,13 @@ class BillCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
 
-                  child: Icon(bill.icon, color: Colors.white, size: 24),
+                  // ignore: non_const_argument_for_const_parameter
+                  child: Icon(
+                    // ignore: non_const_argument_for_const_parameter
+                    IconData(bill.iconCodePoint, fontFamily: 'MaterialIcons'),
+                    color: Colors.white,
+                    size: 24,
+                  ),
                 ),
 
                 const SizedBox(width: 14),
@@ -610,7 +616,7 @@ class BillCard extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
 
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.googleSans(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
                         ),
@@ -623,7 +629,7 @@ class BillCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
 
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.googleSans(
                           fontSize: 12.5,
                           color: Colors.white54,
                         ),
@@ -642,7 +648,7 @@ class BillCard extends StatelessWidget {
                     Text(
                       '₹${bill.amount.toStringAsFixed(0)}',
 
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.googleSans(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.5,
@@ -654,7 +660,7 @@ class BillCard extends StatelessWidget {
                     Text(
                       'amount',
 
-                      style: GoogleFonts.inter(
+                      style: GoogleFonts.googleSans(
                         fontSize: 10,
                         color: Colors.white30,
                       ),
@@ -705,7 +711,7 @@ class BillCard extends StatelessWidget {
 
                       Text(
                         'Due $dueDate',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.googleSans(
                           fontSize: 12,
                           color: Colors.white70,
                         ),
@@ -764,7 +770,7 @@ class BillCard extends StatelessWidget {
                         Text(
                           bill.reminderEnabled ? 'Reminder set' : 'Remind me',
 
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.googleSans(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w500,
                             color: Colors.white,
@@ -803,17 +809,17 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
   DateTime? selectedDate;
 
-  IconData selectedIcon = Icons.receipt_long_rounded;
+  int selectedIcon = Icons.receipt_long_rounded.codePoint;
 
-  final List<IconData> icons = [
-    Icons.receipt_long_rounded,
-    Icons.bolt_rounded,
-    Icons.wifi_rounded,
-    Icons.phone_android_rounded,
-    Icons.movie_outlined,
-    Icons.home_outlined,
-    Icons.local_gas_station_outlined,
-    Icons.shopping_bag_outlined,
+  final List<int> icons = [
+    Icons.receipt_long_rounded.codePoint,
+    Icons.bolt_rounded.codePoint,
+    Icons.wifi_rounded.codePoint,
+    Icons.phone_android_rounded.codePoint,
+    Icons.movie_outlined.codePoint,
+    Icons.home_outlined.codePoint,
+    Icons.local_gas_station_outlined.codePoint,
+    Icons.shopping_bag_outlined.codePoint,
   ];
 
   @override
@@ -888,7 +894,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
       description: description.isEmpty ? 'Bill payment' : description,
       amount: amount,
       dueDate: selectedDate!,
-      icon: selectedIcon,
+      iconCodePoint: selectedIcon,
     );
 
     Navigator.pop(context, bill);
@@ -931,7 +937,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
                       Text(
                         'Add Bill',
-                        style: GoogleFonts.inter(
+                        style: GoogleFonts.googleSans(
                           fontSize: 21,
                           fontWeight: FontWeight.w600,
                         ),
@@ -953,7 +959,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                       children: [
                         Text(
                           'Create a new bill',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.googleSans(
                             fontSize: 28,
                             fontWeight: FontWeight.w700,
                             letterSpacing: -0.7,
@@ -964,7 +970,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
                         Text(
                           'Add the details and keep track of your payment.',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.googleSans(
                             fontSize: 14,
                             color: Colors.white54,
                           ),
@@ -1048,7 +1054,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                     children: [
                                       Text(
                                         'Due date',
-                                        style: GoogleFonts.inter(
+                                        style: GoogleFonts.googleSans(
                                           fontSize: 12,
                                           color: Colors.white54,
                                         ),
@@ -1061,7 +1067,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                             ? 'Select a date'
                                             : formatFullDate(selectedDate!),
 
-                                        style: GoogleFonts.inter(
+                                        style: GoogleFonts.googleSans(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w500,
                                           color: selectedDate == null
@@ -1089,7 +1095,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                         // =================================================
                         Text(
                           'Choose an icon',
-                          style: GoogleFonts.inter(
+                          style: GoogleFonts.googleSans(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1131,7 +1137,12 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                   ),
                                 ),
 
-                                child: Icon(icon, color: Colors.white),
+                                // ignore: non_const_argument_for_const_parameter
+                                child: Icon(
+                                  // ignore: non_const_argument_for_const_parameter
+                                  IconData(icon, fontFamily: 'MaterialIcons'),
+                                  color: Colors.white,
+                                ),
                               ),
                             );
                           }).toList(),
@@ -1163,7 +1174,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
                             child: Text(
                               'Save Bill',
-                              style: GoogleFonts.inter(
+                              style: GoogleFonts.googleSans(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -1267,7 +1278,7 @@ class GlassTextField extends StatelessWidget {
 
         keyboardType: keyboardType,
 
-        style: GoogleFonts.inter(fontSize: 15, color: Colors.white),
+        style: GoogleFonts.googleSans(fontSize: 15, color: Colors.white),
 
         cursorColor: Colors.white,
 
@@ -1278,11 +1289,17 @@ class GlassTextField extends StatelessWidget {
 
           labelText: label,
 
-          labelStyle: GoogleFonts.inter(fontSize: 12, color: Colors.white54),
+          labelStyle: GoogleFonts.googleSans(
+            fontSize: 12,
+            color: Colors.white54,
+          ),
 
           hintText: hint,
 
-          hintStyle: GoogleFonts.inter(fontSize: 14, color: Colors.white24),
+          hintStyle: GoogleFonts.googleSans(
+            fontSize: 14,
+            color: Colors.white24,
+          ),
 
           prefixIcon: Icon(icon, color: Colors.white54, size: 21),
 
@@ -1433,7 +1450,7 @@ class EmptyBillsView extends StatelessWidget {
 
             Text(
               'No bills yet',
-              style: GoogleFonts.inter(
+              style: GoogleFonts.googleSans(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
               ),
@@ -1445,7 +1462,7 @@ class EmptyBillsView extends StatelessWidget {
               'Add your first bill to start\ntracking your payments.',
               textAlign: TextAlign.center,
 
-              style: GoogleFonts.inter(
+              style: GoogleFonts.googleSans(
                 fontSize: 14,
                 height: 1.5,
                 color: Colors.white54,
@@ -1459,7 +1476,7 @@ class EmptyBillsView extends StatelessWidget {
 
               child: Text(
                 'Add your first bill',
-                style: GoogleFonts.inter(
+                style: GoogleFonts.googleSans(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
