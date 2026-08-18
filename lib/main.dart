@@ -2,8 +2,15 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:bills/services/storage_service.dart';
+import 'package:bills/services/notification_service.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await StorageService().init();
+  await NotificationService().init();
+
   runApp(const BillsApp());
 }
 
@@ -24,9 +31,7 @@ class BillsApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF080A0F),
-        textTheme: GoogleFonts.interTextTheme(
-          ThemeData.dark().textTheme,
-        ),
+        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
       ),
 
       home: const HomeScreen(),
@@ -54,6 +59,28 @@ class Bill {
     required this.icon,
     this.reminderEnabled = false,
   });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'title': title,
+      'description': description,
+      'amount': amount,
+      'dueDate': dueDate.toIso8601String(),
+      'iconCodePoint': icon.codePoint,
+      'reminderEnabled': reminderEnabled,
+    };
+  }
+
+  static Bill fromMap(Map<String, dynamic> m) {
+    return Bill(
+      title: m['title'] as String,
+      description: m['description'] as String,
+      amount: (m['amount'] as num).toDouble(),
+      dueDate: DateTime.parse(m['dueDate'] as String),
+      icon: IconData(m['iconCodePoint'] as int, fontFamily: 'MaterialIcons'),
+      reminderEnabled: m['reminderEnabled'] as bool? ?? false,
+    );
+  }
 }
 
 // ============================================================
@@ -68,31 +95,58 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final List<Bill> bills = [
-    Bill(
-      title: 'Electricity',
-      description: 'Home electricity bill',
-      amount: 1450,
-      dueDate: DateTime(2026, 8, 23),
-      icon: Icons.bolt_rounded,
-    ),
+  final List<Bill> bills = [];
 
-    Bill(
-      title: 'Internet',
-      description: 'Monthly broadband payment',
-      amount: 899,
-      dueDate: DateTime(2026, 8, 20),
-      icon: Icons.wifi_rounded,
-    ),
+  @override
+  void initState() {
+    super.initState();
 
-    Bill(
-      title: 'Netflix',
-      description: 'Monthly subscription',
-      amount: 649,
-      dueDate: DateTime(2026, 8, 28),
-      icon: Icons.movie_outlined,
-    ),
-  ];
+    _loadBills();
+  }
+
+  Future<void> _loadBills() async {
+    final saved = await StorageService().loadBills();
+    if (saved.isEmpty) {
+      setState(() {
+        bills.addAll([
+          Bill(
+            title: 'Electricity',
+            description: 'Home electricity bill',
+            amount: 1450,
+            dueDate: DateTime(2026, 8, 23),
+            icon: Icons.bolt_rounded,
+          ),
+
+          Bill(
+            title: 'Internet',
+            description: 'Monthly broadband payment',
+            amount: 899,
+            dueDate: DateTime(2026, 8, 20),
+            icon: Icons.wifi_rounded,
+          ),
+
+          Bill(
+            title: 'Netflix',
+            description: 'Monthly subscription',
+            amount: 649,
+            dueDate: DateTime(2026, 8, 28),
+            icon: Icons.movie_outlined,
+          ),
+        ]);
+      });
+      await _saveAllBills();
+      return;
+    }
+
+    setState(() {
+      bills.addAll(saved.map(Bill.fromMap));
+    });
+  }
+
+  Future<void> _saveAllBills() async {
+    final maps = bills.map((b) => b.toMap()).toList();
+    await StorageService().saveBills(maps);
+  }
 
   // ==========================================================
   // ADD BILL
@@ -101,15 +155,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void openAddBillPage() async {
     final Bill? newBill = await Navigator.push<Bill>(
       context,
-      MaterialPageRoute(
-        builder: (context) => const AddBillScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const AddBillScreen()),
     );
 
     if (newBill != null) {
       setState(() {
         bills.add(newBill);
       });
+      await _saveAllBills();
     }
   }
 
@@ -121,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       bills.removeAt(index);
     });
+    _saveAllBills();
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -189,19 +243,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 // =================================================
 
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    20,
-                    18,
-                    20,
-                    10,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
 
                   child: Row(
                     children: [
                       Expanded(
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
 
                           children: [
                             Text(
@@ -231,9 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text(
-                                'Notifications will appear here',
-                              ),
+                              content: Text('Notifications will appear here'),
                               behavior: SnackBarBehavior.floating,
                             ),
                           );
@@ -248,11 +294,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 // =================================================
                 // TOTAL CARD
                 // =================================================
-
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
 
                   child: GlassContainer(
                     borderRadius: 24,
@@ -264,12 +307,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 54,
 
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(
-                              alpha: 0.09,
-                            ),
+                            color: Colors.white.withValues(alpha: 0.09),
 
-                            borderRadius:
-                                BorderRadius.circular(17),
+                            borderRadius: BorderRadius.circular(17),
                           ),
 
                           child: const Icon(
@@ -283,8 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
 
                             children: [
                               Text(
@@ -315,12 +354,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
 
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(
-                              alpha: 0.07,
-                            ),
+                            color: Colors.white.withValues(alpha: 0.07),
 
-                            borderRadius:
-                                BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(12),
                           ),
 
                           child: Text(
@@ -342,11 +378,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 // =================================================
                 // UPCOMING TITLE
                 // =================================================
-
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
 
                   child: Row(
                     children: [
@@ -376,22 +409,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 // =================================================
                 // BILL LIST
                 // =================================================
-
                 Expanded(
                   child: bills.isEmpty
-                      ? EmptyBillsView(
-                          onAddBill: openAddBillPage,
-                        )
+                      ? EmptyBillsView(onAddBill: openAddBillPage)
                       : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(
-                            20,
-                            0,
-                            20,
-                            110,
-                          ),
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 110),
 
-                          physics:
-                              const BouncingScrollPhysics(),
+                          physics: const BouncingScrollPhysics(),
 
                           itemCount: bills.length,
 
@@ -399,35 +423,60 @@ class _HomeScreenState extends State<HomeScreen> {
                             final bill = bills[index];
 
                             return Padding(
-                              padding: const EdgeInsets.only(
-                                bottom: 14,
-                              ),
+                              padding: const EdgeInsets.only(bottom: 14),
 
                               child: BillCard(
                                 bill: bill,
 
-                                dueDate:
-                                    formatDate(bill.dueDate),
+                                dueDate: formatDate(bill.dueDate),
 
-                                onReminderChanged:
-                                    (value) {
+                                onReminderChanged: (value) async {
                                   setState(() {
-                                    bill.reminderEnabled =
-                                        value;
+                                    bill.reminderEnabled = value;
                                   });
 
-                                  ScaffoldMessenger.of(
-                                    context,
-                                  ).showSnackBar(
+                                  if (value) {
+                                    // schedule at 9:00 AM on due date
+                                    final scheduled = DateTime(
+                                      bill.dueDate.year,
+                                      bill.dueDate.month,
+                                      bill.dueDate.day,
+                                      9,
+                                      0,
+                                    );
+
+                                    final id = bill
+                                        .dueDate
+                                        .millisecondsSinceEpoch
+                                        .remainder(1 << 31);
+
+                                    await NotificationService().scheduleReminder(
+                                      id: id,
+                                      title: 'Bill due: ${bill.title}',
+                                      body:
+                                          '${bill.description} — ₹${bill.amount.toStringAsFixed(0)}',
+                                      scheduledDate: scheduled,
+                                    );
+                                  } else {
+                                    final id = bill
+                                        .dueDate
+                                        .millisecondsSinceEpoch
+                                        .remainder(1 << 31);
+                                    await NotificationService().cancel(id);
+                                  }
+
+                                  await _saveAllBills();
+
+                                  if (!mounted) return;
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
                                       content: Text(
                                         value
                                             ? 'Reminder set for ${bill.title}'
                                             : 'Reminder removed',
                                       ),
-                                      behavior:
-                                          SnackBarBehavior
-                                              .floating,
+                                      behavior: SnackBarBehavior.floating,
                                     ),
                                   );
                                 },
@@ -449,12 +498,9 @@ class _HomeScreenState extends State<HomeScreen> {
       // =========================================================
       // ADD BUTTON
       // =========================================================
-
       floatingActionButton: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(
-            bottom: 10,
-          ),
+          padding: const EdgeInsets.only(bottom: 10),
 
           child: FloatingActionButton.extended(
             onPressed: openAddBillPage,
@@ -464,15 +510,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
             elevation: 8,
 
-            icon: const Icon(
-              Icons.add_rounded,
-            ),
+            icon: const Icon(Icons.add_rounded),
 
             label: Text(
               'Add Bill',
-              style: GoogleFonts.inter(
-                fontWeight: FontWeight.w600,
-              ),
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
             ),
           ),
         ),
@@ -502,9 +544,7 @@ class BillCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Dismissible(
-      key: ValueKey(
-        '${bill.title}_${bill.dueDate.toIso8601String()}',
-      ),
+      key: ValueKey('${bill.title}_${bill.dueDate.toIso8601String()}'),
 
       direction: DismissDirection.endToStart,
 
@@ -516,14 +556,10 @@ class BillCard extends StatelessWidget {
       background: Container(
         alignment: Alignment.centerRight,
 
-        padding: const EdgeInsets.only(
-          right: 25,
-        ),
+        padding: const EdgeInsets.only(right: 25),
 
         decoration: BoxDecoration(
-          color: Colors.red.withValues(
-            alpha: 0.15,
-          ),
+          color: Colors.red.withValues(alpha: 0.15),
 
           borderRadius: BorderRadius.circular(24),
         ),
@@ -544,8 +580,7 @@ class BillCard extends StatelessWidget {
             // ===================================================
 
             Row(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
 
               children: [
                 // Icon
@@ -554,19 +589,12 @@ class BillCard extends StatelessWidget {
                   height: 52,
 
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(
-                      alpha: 0.08,
-                    ),
+                    color: Colors.white.withValues(alpha: 0.08),
 
-                    borderRadius:
-                        BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(16),
                   ),
 
-                  child: Icon(
-                    bill.icon,
-                    color: Colors.white,
-                    size: 24,
-                  ),
+                  child: Icon(bill.icon, color: Colors.white, size: 24),
                 ),
 
                 const SizedBox(width: 14),
@@ -574,8 +602,7 @@ class BillCard extends StatelessWidget {
                 // Details
                 Expanded(
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
 
                     children: [
                       Text(
@@ -609,8 +636,7 @@ class BillCard extends StatelessWidget {
 
                 // Amount
                 Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.end,
 
                   children: [
                     Text(
@@ -643,20 +669,13 @@ class BillCard extends StatelessWidget {
             // ===================================================
             // DIVIDER
             // ===================================================
-
-            Container(
-              height: 1,
-              color: Colors.white.withValues(
-                alpha: 0.07,
-              ),
-            ),
+            Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
 
             const SizedBox(height: 14),
 
             // ===================================================
             // BOTTOM
             // ===================================================
-
             Row(
               children: [
                 // Due date
@@ -667,17 +686,13 @@ class BillCard extends StatelessWidget {
                   ),
 
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(
-                      alpha: 0.05,
-                    ),
+                    color: Colors.white.withValues(alpha: 0.05),
 
-                    borderRadius:
-                        BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(10),
                   ),
 
                   child: Row(
-                    mainAxisSize:
-                        MainAxisSize.min,
+                    mainAxisSize: MainAxisSize.min,
 
                     children: [
                       const Icon(
@@ -704,56 +719,39 @@ class BillCard extends StatelessWidget {
                 // Reminder
                 GestureDetector(
                   onTap: () {
-                    onReminderChanged(
-                      !bill.reminderEnabled,
-                    );
+                    onReminderChanged(!bill.reminderEnabled);
                   },
 
                   child: AnimatedContainer(
-                    duration: const Duration(
-                      milliseconds: 220,
-                    ),
+                    duration: const Duration(milliseconds: 220),
 
-                    padding:
-                        const EdgeInsets.symmetric(
+                    padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 8,
                     ),
 
                     decoration: BoxDecoration(
                       color: bill.reminderEnabled
-                          ? Colors.white.withValues(
-                              alpha: 0.14,
-                            )
-                          : Colors.white.withValues(
-                              alpha: 0.06,
-                            ),
+                          ? Colors.white.withValues(alpha: 0.14)
+                          : Colors.white.withValues(alpha: 0.06),
 
-                      borderRadius:
-                          BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(12),
 
                       border: Border.all(
                         color: bill.reminderEnabled
-                            ? Colors.white.withValues(
-                                alpha: 0.18,
-                              )
-                            : Colors.white.withValues(
-                                alpha: 0.08,
-                              ),
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : Colors.white.withValues(alpha: 0.08),
                       ),
                     ),
 
                     child: Row(
-                      mainAxisSize:
-                          MainAxisSize.min,
+                      mainAxisSize: MainAxisSize.min,
 
                       children: [
                         Icon(
                           bill.reminderEnabled
-                              ? Icons
-                                  .notifications_active_rounded
-                              : Icons
-                                  .notifications_none_rounded,
+                              ? Icons.notifications_active_rounded
+                              : Icons.notifications_none_rounded,
 
                           size: 16,
                           color: bill.reminderEnabled
@@ -764,14 +762,11 @@ class BillCard extends StatelessWidget {
                         const SizedBox(width: 7),
 
                         Text(
-                          bill.reminderEnabled
-                              ? 'Reminder set'
-                              : 'Remind me',
+                          bill.reminderEnabled ? 'Reminder set' : 'Remind me',
 
                           style: GoogleFonts.inter(
                             fontSize: 11.5,
-                            fontWeight:
-                                FontWeight.w500,
+                            fontWeight: FontWeight.w500,
                             color: Colors.white,
                           ),
                         ),
@@ -796,25 +791,19 @@ class AddBillScreen extends StatefulWidget {
   const AddBillScreen({super.key});
 
   @override
-  State<AddBillScreen> createState() =>
-      _AddBillScreenState();
+  State<AddBillScreen> createState() => _AddBillScreenState();
 }
 
-class _AddBillScreenState
-    extends State<AddBillScreen> {
-  final TextEditingController titleController =
-      TextEditingController();
+class _AddBillScreenState extends State<AddBillScreen> {
+  final TextEditingController titleController = TextEditingController();
 
-  final TextEditingController descriptionController =
-      TextEditingController();
+  final TextEditingController descriptionController = TextEditingController();
 
-  final TextEditingController amountController =
-      TextEditingController();
+  final TextEditingController amountController = TextEditingController();
 
   DateTime? selectedDate;
 
-  IconData selectedIcon =
-      Icons.receipt_long_rounded;
+  IconData selectedIcon = Icons.receipt_long_rounded;
 
   final List<IconData> icons = [
     Icons.receipt_long_rounded,
@@ -841,12 +830,10 @@ class _AddBillScreenState
   // ==========================================================
 
   Future<void> pickDate() async {
-    final DateTime? picked =
-        await showDatePicker(
+    final DateTime? picked = await showDatePicker(
       context: context,
 
-      initialDate:
-          selectedDate ?? DateTime.now(),
+      initialDate: selectedDate ?? DateTime.now(),
 
       firstDate: DateTime.now(),
 
@@ -855,8 +842,7 @@ class _AddBillScreenState
       builder: (context, child) {
         return Theme(
           data: ThemeData.dark().copyWith(
-            colorScheme:
-                const ColorScheme.dark(
+            colorScheme: const ColorScheme.dark(
               primary: Colors.white,
               onPrimary: Colors.black,
               surface: Color(0xFF151820),
@@ -880,28 +866,17 @@ class _AddBillScreenState
   // ==========================================================
 
   void saveBill() {
-    final title =
-        titleController.text.trim();
+    final title = titleController.text.trim();
 
-    final description =
-        descriptionController.text.trim();
+    final description = descriptionController.text.trim();
 
-    final amount =
-        double.tryParse(
-      amountController.text.trim(),
-    );
+    final amount = double.tryParse(amountController.text.trim());
 
-    if (title.isEmpty ||
-        amount == null ||
-        selectedDate == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(
+    if (title.isEmpty || amount == null || selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Please enter the bill name, amount and due date.',
-          ),
-          behavior:
-              SnackBarBehavior.floating,
+          content: Text('Please enter the bill name, amount and due date.'),
+          behavior: SnackBarBehavior.floating,
         ),
       );
 
@@ -910,19 +885,13 @@ class _AddBillScreenState
 
     final bill = Bill(
       title: title,
-      description:
-          description.isEmpty
-              ? 'Bill payment'
-              : description,
+      description: description.isEmpty ? 'Bill payment' : description,
       amount: amount,
       dueDate: selectedDate!,
       icon: selectedIcon,
     );
 
-    Navigator.pop(
-      context,
-      bill,
-    );
+    Navigator.pop(context, bill);
   }
 
   // ==========================================================
@@ -932,8 +901,7 @@ class _AddBillScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          const Color(0xFF080A0F),
+      backgroundColor: const Color(0xFF080A0F),
 
       body: Stack(
         children: [
@@ -947,18 +915,12 @@ class _AddBillScreenState
                 // =================================================
 
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    16,
-                    12,
-                    20,
-                    10,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 20, 10),
 
                   child: Row(
                     children: [
                       GlassIconButton(
-                        icon:
-                            Icons.arrow_back_ios_new_rounded,
+                        icon: Icons.arrow_back_ios_new_rounded,
 
                         onTap: () {
                           Navigator.pop(context);
@@ -971,8 +933,7 @@ class _AddBillScreenState
                         'Add Bill',
                         style: GoogleFonts.inter(
                           fontSize: 21,
-                          fontWeight:
-                              FontWeight.w600,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -982,28 +943,19 @@ class _AddBillScreenState
                 // =================================================
                 // CONTENT
                 // =================================================
-
                 Expanded(
                   child: SingleChildScrollView(
-                    padding:
-                        const EdgeInsets.fromLTRB(
-                      20,
-                      20,
-                      20,
-                      40,
-                    ),
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
 
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
 
                       children: [
                         Text(
                           'Create a new bill',
                           style: GoogleFonts.inter(
                             fontSize: 28,
-                            fontWeight:
-                                FontWeight.w700,
+                            fontWeight: FontWeight.w700,
                             letterSpacing: -0.7,
                           ),
                         ),
@@ -1023,15 +975,11 @@ class _AddBillScreenState
                         // =================================================
                         // BILL NAME
                         // =================================================
-
                         GlassTextField(
-                          controller:
-                              titleController,
+                          controller: titleController,
                           label: 'Bill name',
-                          hint:
-                              'e.g. Electricity',
-                          icon:
-                              Icons.receipt_long_outlined,
+                          hint: 'e.g. Electricity',
+                          icon: Icons.receipt_long_outlined,
                         ),
 
                         const SizedBox(height: 14),
@@ -1039,15 +987,11 @@ class _AddBillScreenState
                         // =================================================
                         // DESCRIPTION
                         // =================================================
-
                         GlassTextField(
-                          controller:
-                              descriptionController,
+                          controller: descriptionController,
                           label: 'Description',
-                          hint:
-                              'e.g. Home electricity bill',
-                          icon:
-                              Icons.notes_rounded,
+                          hint: 'e.g. Home electricity bill',
+                          icon: Icons.notes_rounded,
                         ),
 
                         const SizedBox(height: 14),
@@ -1055,18 +999,12 @@ class _AddBillScreenState
                         // =================================================
                         // AMOUNT
                         // =================================================
-
                         GlassTextField(
-                          controller:
-                              amountController,
+                          controller: amountController,
                           label: 'Amount',
-                          hint:
-                              'e.g. 1450',
-                          icon:
-                              Icons.currency_rupee_rounded,
-                          keyboardType:
-                              const TextInputType
-                                  .numberWithOptions(
+                          hint: 'e.g. 1450',
+                          icon: Icons.currency_rupee_rounded,
+                          keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
                         ),
@@ -1076,12 +1014,10 @@ class _AddBillScreenState
                         // =================================================
                         // DATE
                         // =================================================
-
                         GestureDetector(
                           onTap: pickDate,
 
-                          child:
-                              GlassContainer(
+                          child: GlassContainer(
                             borderRadius: 18,
 
                             child: Row(
@@ -1090,76 +1026,47 @@ class _AddBillScreenState
                                   width: 46,
                                   height: 46,
 
-                                  decoration:
-                                      BoxDecoration(
-                                    color: Colors.white
-                                        .withValues(
-                                      alpha: 0.07,
-                                    ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.07),
 
-                                    borderRadius:
-                                        BorderRadius
-                                            .circular(
-                                      14,
-                                    ),
+                                    borderRadius: BorderRadius.circular(14),
                                   ),
 
                                   child: const Icon(
-                                    Icons
-                                        .calendar_month_outlined,
-                                    color:
-                                        Colors.white70,
+                                    Icons.calendar_month_outlined,
+                                    color: Colors.white70,
                                   ),
                                 ),
 
-                                const SizedBox(
-                                  width: 14,
-                                ),
+                                const SizedBox(width: 14),
 
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
-                                        CrossAxisAlignment
-                                            .start,
+                                        CrossAxisAlignment.start,
 
                                     children: [
                                       Text(
                                         'Due date',
-                                        style:
-                                            GoogleFonts
-                                                .inter(
+                                        style: GoogleFonts.inter(
                                           fontSize: 12,
-                                          color: Colors
-                                              .white54,
+                                          color: Colors.white54,
                                         ),
                                       ),
 
-                                      const SizedBox(
-                                        height: 4,
-                                      ),
+                                      const SizedBox(height: 4),
 
                                       Text(
-                                        selectedDate ==
-                                                null
+                                        selectedDate == null
                                             ? 'Select a date'
-                                            : formatFullDate(
-                                                selectedDate!,
-                                              ),
+                                            : formatFullDate(selectedDate!),
 
-                                        style:
-                                            GoogleFonts
-                                                .inter(
+                                        style: GoogleFonts.inter(
                                           fontSize: 15,
-                                          fontWeight:
-                                              FontWeight
-                                                  .w500,
-                                          color:
-                                              selectedDate ==
-                                                      null
-                                                  ? Colors
-                                                      .white38
-                                                  : Colors
-                                                      .white,
+                                          fontWeight: FontWeight.w500,
+                                          color: selectedDate == null
+                                              ? Colors.white38
+                                              : Colors.white,
                                         ),
                                       ),
                                     ],
@@ -1167,10 +1074,8 @@ class _AddBillScreenState
                                 ),
 
                                 const Icon(
-                                  Icons
-                                      .chevron_right_rounded,
-                                  color:
-                                      Colors.white38,
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.white38,
                                 ),
                               ],
                             ),
@@ -1182,13 +1087,11 @@ class _AddBillScreenState
                         // =================================================
                         // ICON
                         // =================================================
-
                         Text(
                           'Choose an icon',
                           style: GoogleFonts.inter(
                             fontSize: 15,
-                            fontWeight:
-                                FontWeight.w600,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
 
@@ -1198,72 +1101,37 @@ class _AddBillScreenState
                           spacing: 10,
                           runSpacing: 10,
 
-                          children:
-                              icons.map((icon) {
-                            final isSelected =
-                                icon ==
-                                    selectedIcon;
+                          children: icons.map((icon) {
+                            final isSelected = icon == selectedIcon;
 
                             return GestureDetector(
                               onTap: () {
                                 setState(() {
-                                  selectedIcon =
-                                      icon;
+                                  selectedIcon = icon;
                                 });
                               },
 
-                              child:
-                                  AnimatedContainer(
-                                duration:
-                                    const Duration(
-                                  milliseconds:
-                                      180,
-                                ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
 
                                 width: 52,
                                 height: 52,
 
-                                decoration:
-                                    BoxDecoration(
+                                decoration: BoxDecoration(
                                   color: isSelected
-                                      ? Colors.white
-                                          .withValues(
-                                          alpha:
-                                              0.18,
-                                        )
-                                      : Colors.white
-                                          .withValues(
-                                          alpha:
-                                              0.06,
-                                        ),
+                                      ? Colors.white.withValues(alpha: 0.18)
+                                      : Colors.white.withValues(alpha: 0.06),
 
-                                  borderRadius:
-                                      BorderRadius
-                                          .circular(
-                                    15,
-                                  ),
+                                  borderRadius: BorderRadius.circular(15),
 
-                                  border:
-                                      Border.all(
+                                  border: Border.all(
                                     color: isSelected
-                                        ? Colors.white
-                                            .withValues(
-                                            alpha:
-                                                0.30,
-                                          )
-                                        : Colors.white
-                                            .withValues(
-                                            alpha:
-                                                0.08,
-                                          ),
+                                        ? Colors.white.withValues(alpha: 0.30)
+                                        : Colors.white.withValues(alpha: 0.08),
                                   ),
                                 ),
 
-                                child: Icon(
-                                  icon,
-                                  color: Colors
-                                      .white,
-                                ),
+                                child: Icon(icon, color: Colors.white),
                               ),
                             );
                           }).toList(),
@@ -1274,46 +1142,30 @@ class _AddBillScreenState
                         // =================================================
                         // SAVE BUTTON
                         // =================================================
-
                         SizedBox(
-                          width:
-                              double.infinity,
+                          width: double.infinity,
                           height: 56,
 
-                          child:
-                              ElevatedButton(
+                          child: ElevatedButton(
                             onPressed: saveBill,
 
-                            style:
-                                ElevatedButton
-                                    .styleFrom(
-                              backgroundColor:
-                                  Colors.white,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
 
-                              foregroundColor:
-                                  Colors.black,
+                              foregroundColor: Colors.black,
 
                               elevation: 0,
 
-                              shape:
-                                  RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius
-                                        .circular(
-                                  18,
-                                ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18),
                               ),
                             ),
 
                             child: Text(
                               'Save Bill',
-                              style:
-                                  GoogleFonts
-                                      .inter(
+                              style: GoogleFonts.inter(
                                 fontSize: 15,
-                                fontWeight:
-                                    FontWeight
-                                        .w600,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -1335,8 +1187,7 @@ class _AddBillScreenState
 // GLASS CONTAINER
 // ============================================================
 
-class GlassContainer
-    extends StatelessWidget {
+class GlassContainer extends StatelessWidget {
   final Widget child;
   final double borderRadius;
 
@@ -1349,48 +1200,28 @@ class GlassContainer
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius:
-          BorderRadius.circular(
-        borderRadius,
-      ),
+      borderRadius: BorderRadius.circular(borderRadius),
 
       child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: 20,
-          sigmaY: 20,
-        ),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
 
         child: Container(
-          padding:
-              const EdgeInsets.all(17),
+          padding: const EdgeInsets.all(17),
 
-          decoration:
-              BoxDecoration(
-            color: Colors.white
-                .withValues(
-              alpha: 0.065,
-            ),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.065),
 
-            borderRadius:
-                BorderRadius.circular(
-              borderRadius,
-            ),
+            borderRadius: BorderRadius.circular(borderRadius),
 
             border: Border.all(
-              color: Colors.white
-                  .withValues(
-                alpha: 0.12,
-              ),
+              color: Colors.white.withValues(alpha: 0.12),
 
               width: 1,
             ),
 
             boxShadow: [
               BoxShadow(
-                color: Colors.black
-                    .withValues(
-                  alpha: 0.20,
-                ),
+                color: Colors.black.withValues(alpha: 0.20),
 
                 blurRadius: 30,
 
@@ -1410,8 +1241,7 @@ class GlassContainer
 // GLASS TEXT FIELD
 // ============================================================
 
-class GlassTextField
-    extends StatelessWidget {
+class GlassTextField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final String hint;
@@ -1437,47 +1267,26 @@ class GlassTextField
 
         keyboardType: keyboardType,
 
-        style: GoogleFonts.inter(
-          fontSize: 15,
-          color: Colors.white,
-        ),
+        style: GoogleFonts.inter(fontSize: 15, color: Colors.white),
 
         cursorColor: Colors.white,
 
-        decoration:
-            InputDecoration(
-          border:
-              InputBorder.none,
+        decoration: InputDecoration(
+          border: InputBorder.none,
 
-          contentPadding:
-              EdgeInsets.zero,
+          contentPadding: EdgeInsets.zero,
 
           labelText: label,
 
-          labelStyle:
-              GoogleFonts.inter(
-            fontSize: 12,
-            color: Colors.white54,
-          ),
+          labelStyle: GoogleFonts.inter(fontSize: 12, color: Colors.white54),
 
           hintText: hint,
 
-          hintStyle:
-              GoogleFonts.inter(
-            fontSize: 14,
-            color: Colors.white24,
-          ),
+          hintStyle: GoogleFonts.inter(fontSize: 14, color: Colors.white24),
 
-          prefixIcon: Icon(
-            icon,
-            color: Colors.white54,
-            size: 21,
-          ),
+          prefixIcon: Icon(icon, color: Colors.white54, size: 21),
 
-          prefixIconConstraints:
-              const BoxConstraints(
-            minWidth: 45,
-          ),
+          prefixIconConstraints: const BoxConstraints(minWidth: 45),
         ),
       ),
     );
@@ -1488,16 +1297,11 @@ class GlassTextField
 // GLASS ICON BUTTON
 // ============================================================
 
-class GlassIconButton
-    extends StatelessWidget {
+class GlassIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const GlassIconButton({
-    super.key,
-    required this.icon,
-    required this.onTap,
-  });
+  const GlassIconButton({super.key, required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1507,40 +1311,21 @@ class GlassIconButton
       child: InkWell(
         onTap: onTap,
 
-        borderRadius:
-            BorderRadius.circular(
-          15,
-        ),
+        borderRadius: BorderRadius.circular(15),
 
         child: Container(
           width: 46,
           height: 46,
 
-          decoration:
-              BoxDecoration(
-            color: Colors.white
-                .withValues(
-              alpha: 0.07,
-            ),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.07),
 
-            borderRadius:
-                BorderRadius.circular(
-              15,
-            ),
+            borderRadius: BorderRadius.circular(15),
 
-            border: Border.all(
-              color: Colors.white
-                  .withValues(
-                alpha: 0.12,
-              ),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
           ),
 
-          child: Icon(
-            icon,
-            size: 20,
-            color: Colors.white,
-          ),
+          child: Icon(icon, size: 20, color: Colors.white),
         ),
       ),
     );
@@ -1551,32 +1336,21 @@ class GlassIconButton
 // BACKGROUND
 // ============================================================
 
-class AppBackground
-    extends StatelessWidget {
-  const AppBackground({
-    super.key,
-  });
+class AppBackground extends StatelessWidget {
+  const AppBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         Container(
-          decoration:
-              const BoxDecoration(
-            gradient:
-                LinearGradient(
-              begin:
-                  Alignment.topLeft,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
 
-              end:
-                  Alignment.bottomRight,
+              end: Alignment.bottomRight,
 
-              colors: [
-                Color(0xFF10151E),
-                Color(0xFF080A0F),
-                Color(0xFF0D0D15),
-              ],
+              colors: [Color(0xFF10151E), Color(0xFF080A0F), Color(0xFF0D0D15)],
             ),
           ),
         ),
@@ -1590,15 +1364,10 @@ class AppBackground
             width: 300,
             height: 300,
 
-            decoration:
-                BoxDecoration(
-              shape:
-                  BoxShape.circle,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
 
-              color: Colors.blue
-                  .withValues(
-                alpha: 0.10,
-              ),
+              color: Colors.blue.withValues(alpha: 0.10),
             ),
           ),
         ),
@@ -1612,15 +1381,10 @@ class AppBackground
             width: 320,
             height: 320,
 
-            decoration:
-                BoxDecoration(
-              shape:
-                  BoxShape.circle,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
 
-              color: Colors.purple
-                  .withValues(
-                alpha: 0.08,
-              ),
+              color: Colors.purple.withValues(alpha: 0.08),
             ),
           ),
         ),
@@ -1633,42 +1397,29 @@ class AppBackground
 // EMPTY STATE
 // ============================================================
 
-class EmptyBillsView
-    extends StatelessWidget {
+class EmptyBillsView extends StatelessWidget {
   final VoidCallback onAddBill;
 
-  const EmptyBillsView({
-    super.key,
-    required this.onAddBill,
-  });
+  const EmptyBillsView({super.key, required this.onAddBill});
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding:
-            const EdgeInsets.all(30),
+        padding: const EdgeInsets.all(30),
 
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
 
           children: [
             Container(
               width: 80,
               height: 80,
 
-              decoration:
-                  BoxDecoration(
-                color: Colors.white
-                    .withValues(
-                  alpha: 0.07,
-                ),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.07),
 
-                borderRadius:
-                    BorderRadius.circular(
-                  25,
-                ),
+                borderRadius: BorderRadius.circular(25),
               ),
 
               child: const Icon(
@@ -1684,8 +1435,7 @@ class EmptyBillsView
               'No bills yet',
               style: GoogleFonts.inter(
                 fontSize: 20,
-                fontWeight:
-                    FontWeight.w600,
+                fontWeight: FontWeight.w600,
               ),
             ),
 
@@ -1693,8 +1443,7 @@ class EmptyBillsView
 
             Text(
               'Add your first bill to start\ntracking your payments.',
-              textAlign:
-                  TextAlign.center,
+              textAlign: TextAlign.center,
 
               style: GoogleFonts.inter(
                 fontSize: 14,
@@ -1710,11 +1459,9 @@ class EmptyBillsView
 
               child: Text(
                 'Add your first bill',
-                style:
-                    GoogleFonts.inter(
+                style: GoogleFonts.inter(
                   color: Colors.white,
-                  fontWeight:
-                      FontWeight.w600,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -1729,9 +1476,7 @@ class EmptyBillsView
 // DATE FORMAT
 // ============================================================
 
-String formatFullDate(
-  DateTime date,
-) {
+String formatFullDate(DateTime date) {
   const months = [
     'January',
     'February',
