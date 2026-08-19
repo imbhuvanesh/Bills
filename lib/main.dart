@@ -315,6 +315,8 @@ class _HomeScreenState extends State<HomeScreen> {
       bills.removeAt(index);
     });
 
+    await _saveAllBills();
+
     if (bill.reminderEnabled) {
       final reminderId = NotificationService.buildReminderId(
         bill.title,
@@ -322,8 +324,6 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       await NotificationService().cancel(reminderId);
     }
-
-    await _saveAllBills();
 
     if (!mounted) return;
 
@@ -806,9 +806,26 @@ class BillCard extends StatefulWidget {
   State<BillCard> createState() => _BillCardState();
 }
 
-class _BillCardState extends State<BillCard> {
+class _BillCardState extends State<BillCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController entryController;
   bool showSwipeHint = false;
   int hintGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    entryController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    entryController.dispose();
+    super.dispose();
+  }
 
   void revealSwipeHint() {
     final generation = ++hintGeneration;
@@ -826,301 +843,324 @@ class _BillCardState extends State<BillCard> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPress: revealSwipeHint,
-      child: Dismissible(
-        key: ValueKey(
-          '${widget.bill.title}_${widget.bill.dueDate.toIso8601String()}',
-        ),
+    final entryAnimation = CurvedAnimation(
+      parent: entryController,
+      curve: Curves.easeOutCubic,
+    );
 
-        direction: DismissDirection.endToStart,
+    return FadeTransition(
+      opacity: entryAnimation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.06),
+          end: Offset.zero,
+        ).animate(entryAnimation),
+        child: GestureDetector(
+          onLongPress: revealSwipeHint,
+          child: Dismissible(
+            key: ValueKey(
+              '${widget.bill.title}_${widget.bill.dueDate.toIso8601String()}',
+            ),
 
-        confirmDismiss: (direction) async {
-          await widget.onDelete();
-          return true;
-        },
+            direction: DismissDirection.endToStart,
 
-        background: Container(
-          alignment: Alignment.centerRight,
+            confirmDismiss: (direction) async {
+              await widget.onDelete();
+              return true;
+            },
 
-          padding: const EdgeInsets.only(right: 25),
+            background: Container(
+              alignment: Alignment.centerRight,
 
-          decoration: BoxDecoration(
-            color: Colors.red.withValues(alpha: 0.15),
+              padding: const EdgeInsets.only(right: 25),
 
-            borderRadius: BorderRadius.circular(24),
-          ),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
 
-          child: const Icon(
-            Icons.delete_outline_rounded,
-            color: Colors.redAccent,
-          ),
-        ),
+                borderRadius: BorderRadius.circular(24),
+              ),
 
-        child: GlassContainer(
-          borderRadius: 24,
+              child: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.redAccent,
+              ),
+            ),
 
-          child: Column(
-            children: [
-              // ===================================================
-              // TOP
-              // ===================================================
+            child: GlassContainer(
+              borderRadius: 24,
 
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-
+              child: Column(
                 children: [
-                  // Icon
-                  Container(
-                    width: 52,
-                    height: 52,
+                  // ===================================================
+                  // TOP
+                  // ===================================================
 
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
 
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-
-                    // ignore: non_const_argument_for_const_parameter
-                    child: Icon(
-                      // ignore: non_const_argument_for_const_parameter
-                      IconData(
-                        // ignore: non_const_argument_for_const_parameter
-                        widget.bill.iconCodePoint,
-                        fontFamily: 'MaterialIcons',
-                      ),
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-
-                  const SizedBox(width: 14),
-
-                  // Details
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-
-                      children: [
-                        Text(
-                          widget.bill.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-
-                          style: GoogleFonts.googleSans(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-
-                        const SizedBox(height: 5),
-
-                        Text(
-                          widget.bill.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-
-                          style: GoogleFonts.googleSans(
-                            fontSize: 12.5,
-                            color: Colors.white54,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(width: 10),
-
-                  // Amount
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Text(
-                        '₹${formatCurrency(widget.bill.amount)}',
-                        style: GoogleFonts.googleSans(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      Text(
-                        'amount',
-                        style: GoogleFonts.googleSans(
-                          fontSize: 10,
-                          color: Colors.white30,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      // Icon
+                      Container(
+                        width: 52,
+                        height: 52,
 
-              const SizedBox(height: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.08),
 
-              // ===================================================
-              // DIVIDER
-              // ===================================================
-              Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
-
-              const SizedBox(height: 14),
-
-              // ===================================================
-              // BOTTOM
-              // ===================================================
-              Row(
-                children: [
-                  // Due date
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
-                    ),
-
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.05),
-
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-
-                      children: [
-                        Icon(
-                          Icons.calendar_today_outlined,
-                          size: 14,
-                          color: Colors.white54,
+                          borderRadius: BorderRadius.circular(16),
                         ),
 
-                        const SizedBox(width: 7),
-
-                        Text(
-                          'Due ${widget.dueDate}',
-                          style: GoogleFonts.googleSans(
-                            fontSize: 12,
-                            color: Colors.white70,
+                        // ignore: non_const_argument_for_const_parameter
+                        child: Icon(
+                          // ignore: non_const_argument_for_const_parameter
+                          IconData(
+                            // ignore: non_const_argument_for_const_parameter
+                            widget.bill.iconCodePoint,
+                            fontFamily: 'MaterialIcons',
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  OutlinedButton.icon(
-                    onPressed: widget.onEdit,
-                    icon: const Icon(Icons.edit_outlined, size: 14),
-                    label: const Text('Edit'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white70,
-                      side: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.14),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 7,
-                      ),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      textStyle: GoogleFonts.googleSans(fontSize: 11.5),
-                    ),
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  // Reminder
-                  GestureDetector(
-                    onTap: () {
-                      widget.onReminderChanged(!widget.bill.reminderEnabled);
-                    },
-
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-
-                      decoration: BoxDecoration(
-                        color: widget.bill.reminderEnabled
-                            ? Colors.green.withValues(alpha: 0.18)
-                            : Colors.white.withValues(alpha: 0.06),
-
-                        borderRadius: BorderRadius.circular(12),
-
-                        border: Border.all(
-                          color: widget.bill.reminderEnabled
-                              ? Colors.greenAccent.withValues(alpha: 0.55)
-                              : Colors.white.withValues(alpha: 0.08),
+                          color: Colors.white,
+                          size: 24,
                         ),
                       ),
 
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      const SizedBox(width: 14),
 
-                        children: [
-                          Icon(
-                            widget.bill.reminderEnabled
-                                ? Icons.notifications_active_rounded
-                                : Icons.notifications_none_rounded,
+                      // Details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
 
-                            size: 16,
-                            color: widget.bill.reminderEnabled
-                                ? Colors.greenAccent
-                                : Colors.white70,
-                          ),
-
-                          const SizedBox(width: 7),
-
-                          Text(
-                            widget.bill.reminderEnabled
-                                ? 'Reminder set'
-                                : 'Remind me',
-
-                            style: GoogleFonts.googleSans(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w500,
-                              color: widget.bill.reminderEnabled
-                                  ? Colors.greenAccent
-                                  : Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                child: showSwipeHint
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.swipe_left_rounded,
-                              size: 16,
-                              color: Colors.redAccent.withValues(alpha: 0.85),
-                            ),
-                            const SizedBox(width: 6),
                             Text(
-                              'Swipe left to delete',
+                              widget.bill.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+
                               style: GoogleFonts.googleSans(
-                                fontSize: 11,
-                                color: Colors.redAccent.withValues(alpha: 0.85),
+                                fontSize: 17,
                                 fontWeight: FontWeight.w600,
+                              ),
+                            ),
+
+                            const SizedBox(height: 5),
+
+                            Text(
+                              widget.bill.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+
+                              style: GoogleFonts.googleSans(
+                                fontSize: 12.5,
+                                color: Colors.white54,
                               ),
                             ),
                           ],
                         ),
-                      )
-                    : const SizedBox.shrink(),
+                      ),
+
+                      const SizedBox(width: 10),
+
+                      // Amount
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '₹${formatCurrency(widget.bill.amount)}',
+                            style: GoogleFonts.googleSans(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            'amount',
+                            style: GoogleFonts.googleSans(
+                              fontSize: 10,
+                              color: Colors.white30,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // ===================================================
+                  // DIVIDER
+                  // ===================================================
+                  Container(
+                    height: 1,
+                    color: Colors.white.withValues(alpha: 0.07),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ===================================================
+                  // BOTTOM
+                  // ===================================================
+                  Row(
+                    children: [
+                      // Due date
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.05),
+
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 14,
+                              color: Colors.white54,
+                            ),
+
+                            const SizedBox(width: 7),
+
+                            Text(
+                              'Due ${widget.dueDate}',
+                              style: GoogleFonts.googleSans(
+                                fontSize: 12,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const Spacer(),
+
+                      OutlinedButton.icon(
+                        onPressed: widget.onEdit,
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        label: const Text('Edit'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          side: BorderSide(
+                            color: Colors.white.withValues(alpha: 0.14),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 7,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          textStyle: GoogleFonts.googleSans(fontSize: 11.5),
+                        ),
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      // Reminder
+                      GestureDetector(
+                        onTap: () {
+                          widget.onReminderChanged(
+                            !widget.bill.reminderEnabled,
+                          );
+                        },
+
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 220),
+
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+
+                          decoration: BoxDecoration(
+                            color: widget.bill.reminderEnabled
+                                ? Colors.green.withValues(alpha: 0.18)
+                                : Colors.white.withValues(alpha: 0.06),
+
+                            borderRadius: BorderRadius.circular(12),
+
+                            border: Border.all(
+                              color: widget.bill.reminderEnabled
+                                  ? Colors.greenAccent.withValues(alpha: 0.55)
+                                  : Colors.white.withValues(alpha: 0.08),
+                            ),
+                          ),
+
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+
+                            children: [
+                              Icon(
+                                widget.bill.reminderEnabled
+                                    ? Icons.notifications_active_rounded
+                                    : Icons.notifications_none_rounded,
+
+                                size: 16,
+                                color: widget.bill.reminderEnabled
+                                    ? Colors.greenAccent
+                                    : Colors.white70,
+                              ),
+
+                              const SizedBox(width: 7),
+
+                              Text(
+                                widget.bill.reminderEnabled
+                                    ? 'Reminder set'
+                                    : 'Remind me',
+
+                                style: GoogleFonts.googleSans(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: widget.bill.reminderEnabled
+                                      ? Colors.greenAccent
+                                      : Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    child: showSwipeHint
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.swipe_left_rounded,
+                                  size: 16,
+                                  color: Colors.redAccent.withValues(
+                                    alpha: 0.85,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Swipe left to delete',
+                                  style: GoogleFonts.googleSans(
+                                    fontSize: 11,
+                                    color: Colors.redAccent.withValues(
+                                      alpha: 0.85,
+                                    ),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
