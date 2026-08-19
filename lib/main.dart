@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:bills/services/storage_service.dart';
 import 'package:bills/services/notification_service.dart';
@@ -98,6 +99,16 @@ bool matchesDateFilter(DateTime billDate, DateTime? selectedDate) {
   return billDay == pickedDay;
 }
 
+bool matchesBillSearch(Bill bill, String query) {
+  final normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.isEmpty) {
+    return true;
+  }
+
+  return bill.title.toLowerCase().contains(normalizedQuery) ||
+      bill.description.toLowerCase().contains(normalizedQuery);
+}
+
 String cleanAmountInput(String value) => value.replaceAll(',', '').trim();
 
 double? parseAmountInput(String value) {
@@ -140,16 +151,23 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final List<Bill> bills = [];
+  final TextEditingController searchController = TextEditingController();
   DateTime? selectedDateFilter;
 
   List<Bill> get filteredBills {
-    if (selectedDateFilter == null) {
-      return bills;
-    }
-
     return bills
-        .where((bill) => matchesDateFilter(bill.dueDate, selectedDateFilter))
+        .where(
+          (bill) =>
+              matchesDateFilter(bill.dueDate, selectedDateFilter) &&
+              matchesBillSearch(bill, searchController.text),
+        )
         .toList();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _openSupportEmail() async {
@@ -404,7 +422,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: GestureDetector(
@@ -561,13 +578,66 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        selectedDateFilter == null
-                            ? '${bills.length}'
-                            : '${filteredBills.length}',
-                        style: GoogleFonts.googleSans(
-                          fontSize: 13,
-                          color: Colors.white38,
+                      SizedBox(
+                        width: 132,
+                        child: TextField(
+                          controller: searchController,
+                          onChanged: (_) => setState(() {}),
+                          style: GoogleFonts.googleSans(
+                            fontSize: 12,
+                            color: Colors.white,
+                          ),
+                          cursorColor: Colors.white,
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: Colors.white.withValues(alpha: 0.06),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(
+                                color: Colors.white38,
+                              ),
+                            ),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 9,
+                            ),
+                            hintText: 'Search',
+                            hintStyle: GoogleFonts.googleSans(
+                              fontSize: 12,
+                              color: Colors.white38,
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              color: Colors.white54,
+                              size: 17,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 30,
+                            ),
+                            suffixIcon: searchController.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () {
+                                      searchController.clear();
+                                      setState(() {});
+                                    },
+                                    tooltip: 'Clear search',
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(
+                                      Icons.close_rounded,
+                                      color: Colors.white54,
+                                      size: 16,
+                                    ),
+                                  ),
+                            suffixIconConstraints: const BoxConstraints(
+                              minWidth: 25,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -669,28 +739,40 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextButton(
-                onPressed: _openSupportEmail,
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(0, 28),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Text(
-                  'Support',
-                  style: GoogleFonts.googleSans(
-                    fontSize: 12,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  TextButton(
+                    onPressed: _openSupportEmail,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 28),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Support',
+                      style: GoogleFonts.googleSans(
+                        fontSize: 12,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              Text(
-                'Developed by Bhuvy',
-                style: GoogleFonts.googleSans(
-                  fontSize: 10,
-                  color: Colors.white54,
-                ),
+                  Text(
+                    '  . ',
+                    style: GoogleFonts.googleSans(
+                      fontSize: 11,
+                      color: Colors.white38,
+                    ),
+                  ),
+                  Text(
+                    'bhuvy',
+                    style: GoogleFonts.googleSans(
+                      fontSize: 12,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -704,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen> {
 // BILL CARD
 // ============================================================
 
-class BillCard extends StatelessWidget {
+class BillCard extends StatefulWidget {
   final Bill bill;
   final String dueDate;
   final ValueChanged<bool> onReminderChanged;
@@ -721,222 +803,183 @@ class BillCard extends StatelessWidget {
   });
 
   @override
+  State<BillCard> createState() => _BillCardState();
+}
+
+class _BillCardState extends State<BillCard> {
+  bool showSwipeHint = false;
+  int hintGeneration = 0;
+
+  void revealSwipeHint() {
+    final generation = ++hintGeneration;
+    setState(() {
+      showSwipeHint = true;
+    });
+
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      if (!mounted || generation != hintGeneration) return;
+      setState(() {
+        showSwipeHint = false;
+      });
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Dismissible(
-      key: ValueKey('${bill.title}_${bill.dueDate.toIso8601String()}'),
-
-      direction: DismissDirection.endToStart,
-
-      confirmDismiss: (direction) async {
-        await onDelete();
-        return true;
-      },
-
-      background: Container(
-        alignment: Alignment.centerRight,
-
-        padding: const EdgeInsets.only(right: 25),
-
-        decoration: BoxDecoration(
-          color: Colors.red.withValues(alpha: 0.15),
-
-          borderRadius: BorderRadius.circular(24),
+    return GestureDetector(
+      onLongPress: revealSwipeHint,
+      child: Dismissible(
+        key: ValueKey(
+          '${widget.bill.title}_${widget.bill.dueDate.toIso8601String()}',
         ),
 
-        child: const Icon(
-          Icons.delete_outline_rounded,
-          color: Colors.redAccent,
+        direction: DismissDirection.endToStart,
+
+        confirmDismiss: (direction) async {
+          await widget.onDelete();
+          return true;
+        },
+
+        background: Container(
+          alignment: Alignment.centerRight,
+
+          padding: const EdgeInsets.only(right: 25),
+
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.15),
+
+            borderRadius: BorderRadius.circular(24),
+          ),
+
+          child: const Icon(
+            Icons.delete_outline_rounded,
+            color: Colors.redAccent,
+          ),
         ),
-      ),
 
-      child: GlassContainer(
-        borderRadius: 24,
+        child: GlassContainer(
+          borderRadius: 24,
 
-        child: Column(
-          children: [
-            // ===================================================
-            // TOP
-            // ===================================================
+          child: Column(
+            children: [
+              // ===================================================
+              // TOP
+              // ===================================================
 
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
 
-              children: [
-                // Icon
-                Container(
-                  width: 52,
-                  height: 52,
+                children: [
+                  // Icon
+                  Container(
+                    width: 52,
+                    height: 52,
 
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
 
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
 
-                  // ignore: non_const_argument_for_const_parameter
-                  child: Icon(
                     // ignore: non_const_argument_for_const_parameter
-                    IconData(bill.iconCodePoint, fontFamily: 'MaterialIcons'),
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-
-                const SizedBox(width: 14),
-
-                // Details
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-
-                    children: [
-                      Text(
-                        bill.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-
-                        style: GoogleFonts.googleSans(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    child: Icon(
+                      // ignore: non_const_argument_for_const_parameter
+                      IconData(
+                        // ignore: non_const_argument_for_const_parameter
+                        widget.bill.iconCodePoint,
+                        fontFamily: 'MaterialIcons',
                       ),
-
-                      const SizedBox(height: 5),
-
-                      Text(
-                        bill.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-
-                        style: GoogleFonts.googleSans(
-                          fontSize: 12.5,
-                          color: Colors.white54,
-                        ),
-                      ),
-                    ],
+                      color: Colors.white,
+                      size: 24,
+                    ),
                   ),
-                ),
 
-                const SizedBox(width: 10),
+                  const SizedBox(width: 14),
 
-                // Amount and edit action
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                  // Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+
                       children: [
                         Text(
-                          '₹${bill.amount.toStringAsFixed(0)}',
+                          widget.bill.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+
                           style: GoogleFonts.googleSans(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.5,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        IconButton(
-                          onPressed: onEdit,
-                          tooltip: 'Edit bill',
-                          icon: const Icon(Icons.edit_outlined, size: 17),
-                          color: Colors.white54,
-                          padding: const EdgeInsets.only(left: 8),
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
+
+                        const SizedBox(height: 5),
+
+                        Text(
+                          widget.bill.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+
+                          style: GoogleFonts.googleSans(
+                            fontSize: 12.5,
+                            color: Colors.white54,
                           ),
                         ),
                       ],
                     ),
-                    Text(
-                      'amount',
-                      style: GoogleFonts.googleSans(
-                        fontSize: 10,
-                        color: Colors.white30,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 18),
-
-            // ===================================================
-            // DIVIDER
-            // ===================================================
-            Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
-
-            const SizedBox(height: 14),
-
-            // ===================================================
-            // BOTTOM
-            // ===================================================
-            Row(
-              children: [
-                // Due date
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
                   ),
 
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.05),
+                  const SizedBox(width: 10),
 
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-
+                  // Amount
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const Icon(
-                        Icons.calendar_today_outlined,
-                        size: 14,
-                        color: Colors.white54,
-                      ),
-
-                      const SizedBox(width: 7),
-
                       Text(
-                        'Due $dueDate',
+                        '₹${formatCurrency(widget.bill.amount)}',
                         style: GoogleFonts.googleSans(
-                          fontSize: 12,
-                          color: Colors.white70,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      Text(
+                        'amount',
+                        style: GoogleFonts.googleSans(
+                          fontSize: 10,
+                          color: Colors.white30,
                         ),
                       ),
                     ],
                   ),
-                ),
+                ],
+              ),
 
-                const Spacer(),
+              const SizedBox(height: 18),
 
-                // Reminder
-                GestureDetector(
-                  onTap: () {
-                    onReminderChanged(!bill.reminderEnabled);
-                  },
+              // ===================================================
+              // DIVIDER
+              // ===================================================
+              Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
 
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
+              const SizedBox(height: 14),
 
+              // ===================================================
+              // BOTTOM
+              // ===================================================
+              Row(
+                children: [
+                  // Due date
+                  Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                      horizontal: 10,
+                      vertical: 7,
                     ),
 
                     decoration: BoxDecoration(
-                      color: bill.reminderEnabled
-                          ? Colors.white.withValues(alpha: 0.14)
-                          : Colors.white.withValues(alpha: 0.06),
+                      color: Colors.white.withValues(alpha: 0.05),
 
-                      borderRadius: BorderRadius.circular(12),
-
-                      border: Border.all(
-                        color: bill.reminderEnabled
-                            ? Colors.white.withValues(alpha: 0.18)
-                            : Colors.white.withValues(alpha: 0.08),
-                      ),
+                      borderRadius: BorderRadius.circular(10),
                     ),
 
                     child: Row(
@@ -944,34 +987,141 @@ class BillCard extends StatelessWidget {
 
                       children: [
                         Icon(
-                          bill.reminderEnabled
-                              ? Icons.notifications_active_rounded
-                              : Icons.notifications_none_rounded,
-
-                          size: 16,
-                          color: bill.reminderEnabled
-                              ? Colors.white
-                              : Colors.white70,
+                          Icons.calendar_today_outlined,
+                          size: 14,
+                          color: Colors.white54,
                         ),
 
                         const SizedBox(width: 7),
 
                         Text(
-                          bill.reminderEnabled ? 'Reminder set' : 'Remind me',
-
+                          'Due ${widget.dueDate}',
                           style: GoogleFonts.googleSans(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
+                            fontSize: 12,
+                            color: Colors.white70,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+
+                  const Spacer(),
+
+                  OutlinedButton.icon(
+                    onPressed: widget.onEdit,
+                    icon: const Icon(Icons.edit_outlined, size: 14),
+                    label: const Text('Edit'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white70,
+                      side: BorderSide(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      textStyle: GoogleFonts.googleSans(fontSize: 11.5),
+                    ),
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  // Reminder
+                  GestureDetector(
+                    onTap: () {
+                      widget.onReminderChanged(!widget.bill.reminderEnabled);
+                    },
+
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+
+                      decoration: BoxDecoration(
+                        color: widget.bill.reminderEnabled
+                            ? Colors.green.withValues(alpha: 0.18)
+                            : Colors.white.withValues(alpha: 0.06),
+
+                        borderRadius: BorderRadius.circular(12),
+
+                        border: Border.all(
+                          color: widget.bill.reminderEnabled
+                              ? Colors.greenAccent.withValues(alpha: 0.55)
+                              : Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+
+                        children: [
+                          Icon(
+                            widget.bill.reminderEnabled
+                                ? Icons.notifications_active_rounded
+                                : Icons.notifications_none_rounded,
+
+                            size: 16,
+                            color: widget.bill.reminderEnabled
+                                ? Colors.greenAccent
+                                : Colors.white70,
+                          ),
+
+                          const SizedBox(width: 7),
+
+                          Text(
+                            widget.bill.reminderEnabled
+                                ? 'Reminder set'
+                                : 'Remind me',
+
+                            style: GoogleFonts.googleSans(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: widget.bill.reminderEnabled
+                                  ? Colors.greenAccent
+                                  : Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                child: showSwipeHint
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.swipe_left_rounded,
+                              size: 16,
+                              color: Colors.redAccent.withValues(alpha: 0.85),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Swipe left to delete',
+                              style: GoogleFonts.googleSans(
+                                fontSize: 11,
+                                color: Colors.redAccent.withValues(alpha: 0.85),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1084,7 +1234,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
     final description = descriptionController.text.trim();
 
-    final amount = double.tryParse(amountController.text.trim());
+    final amount = parseAmountInput(amountController.text);
 
     if (title.isEmpty || amount == null || selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1219,11 +1369,14 @@ class _AddBillScreenState extends State<AddBillScreen> {
                         GlassTextField(
                           controller: amountController,
                           label: 'Amount',
-                          hint: 'e.g. 1450',
+                          hint: 'e.g. 1,00,000',
                           icon: Icons.currency_rupee_rounded,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
+                          keyboardType: TextInputType.text,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'[0-9,.]'),
+                            ),
+                          ],
                         ),
 
                         const SizedBox(height: 14),
@@ -1314,49 +1467,61 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
                         const SizedBox(height: 12),
 
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-
-                          children: icons.map((icon) {
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: icons.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                childAspectRatio: 1,
+                              ),
+                          itemBuilder: (context, index) {
+                            final icon = icons[index];
                             final isSelected = icon == selectedIcon;
-
                             return GestureDetector(
                               onTap: () {
                                 setState(() {
                                   selectedIcon = icon;
                                 });
                               },
-
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 180),
-
-                                width: 52,
-                                height: 52,
-
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? Colors.white.withValues(alpha: 0.18)
                                       : Colors.white.withValues(alpha: 0.06),
-
                                   borderRadius: BorderRadius.circular(15),
-
                                   border: Border.all(
                                     color: isSelected
-                                        ? Colors.white.withValues(alpha: 0.30)
+                                        ? Colors.white
                                         : Colors.white.withValues(alpha: 0.08),
+                                    width: isSelected ? 1.5 : 1,
                                   ),
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.18,
+                                            ),
+                                            blurRadius: 12,
+                                            spreadRadius: 1,
+                                          ),
+                                        ]
+                                      : null,
                                 ),
-
                                 // ignore: non_const_argument_for_const_parameter
                                 child: Icon(
                                   // ignore: non_const_argument_for_const_parameter
                                   IconData(icon, fontFamily: 'MaterialIcons'),
                                   color: Colors.white,
+                                  size: 23,
                                 ),
                               ),
                             );
-                          }).toList(),
+                          },
                         ),
 
                         const SizedBox(height: 35),
@@ -1471,6 +1636,7 @@ class GlassTextField extends StatelessWidget {
   final String hint;
   final IconData icon;
   final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
 
   const GlassTextField({
     super.key,
@@ -1479,6 +1645,7 @@ class GlassTextField extends StatelessWidget {
     required this.hint,
     required this.icon,
     this.keyboardType,
+    this.inputFormatters,
   });
 
   @override
@@ -1490,6 +1657,8 @@ class GlassTextField extends StatelessWidget {
         controller: controller,
 
         keyboardType: keyboardType,
+
+        inputFormatters: inputFormatters,
 
         style: GoogleFonts.googleSans(fontSize: 15, color: Colors.white),
 

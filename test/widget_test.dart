@@ -17,9 +17,24 @@ void main() {
       expect(matchesDateFilter(bill.dueDate, selectedDate), isTrue);
     });
 
+    test('searches bills by title or description', () {
+      final bill = Bill(
+        title: 'Electricity',
+        description: 'Home power bill',
+        amount: 1250,
+        dueDate: DateTime(2026, 8, 19),
+        iconCodePoint: 0,
+      );
+
+      expect(matchesBillSearch(bill, 'electric'), isTrue);
+      expect(matchesBillSearch(bill, 'POWER'), isTrue);
+      expect(matchesBillSearch(bill, 'rent'), isFalse);
+    });
+
     test('parses comma-formatted amounts', () {
       expect(parseAmountInput('1,250'), 1250);
       expect(parseAmountInput('2,345.50'), 2345.5);
+      expect(parseAmountInput('1,00,000'), 100000);
       expect(parseAmountInput(''), isNull);
     });
   });
