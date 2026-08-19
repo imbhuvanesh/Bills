@@ -17,10 +17,11 @@ class NotificationService {
   bool _initialized = false;
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
-    'bills_channel',
+    'bills_channel_fairy',
     'Bills reminders',
     description: 'Reminders for upcoming bills',
     importance: Importance.max,
+    sound: RawResourceAndroidNotificationSound('fairy'),
   );
 
   Future<void> init() async {
@@ -107,6 +108,7 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.high,
       playSound: true,
+      sound: RawResourceAndroidNotificationSound('fairy'),
       enableVibration: true,
       ticker: title,
     );

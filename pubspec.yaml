@@ -100,6 +100,6 @@ flutter:
   # see https://flutter.dev/to/font-from-package
 flutter_launcher_icons:
   android: true
-  ios: true
-  image_path: "assets/icon/app_icon.png"
+  ios: false
+  image_path: "b.jpg"
   min_sdk_android: 21
