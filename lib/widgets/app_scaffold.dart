@@ -15,7 +15,7 @@ class AppScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0F14),
+      backgroundColor: Colors.black,
 
       body: Stack(
         children: [
@@ -82,8 +82,7 @@ class AppScaffold extends StatelessWidget {
                           ),
                         ),
 
-                      if (showBackButton)
-                        const SizedBox(width: 14),
+                      if (showBackButton) const SizedBox(width: 14),
 
                       Text(
                         title,
@@ -98,9 +97,7 @@ class AppScaffold extends StatelessWidget {
                 ),
 
                 // Page content
-                Expanded(
-                  child: child,
-                ),
+                Expanded(child: child),
               ],
             ),
           ),

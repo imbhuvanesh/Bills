@@ -7,7 +7,7 @@ class AppTheme {
 
       fontFamily: 'Inter',
 
-      scaffoldBackgroundColor: const Color(0xFF0B0F14),
+      scaffoldBackgroundColor: Colors.black,
 
       colorScheme: ColorScheme.fromSeed(
         seedColor: Colors.white,
@@ -31,22 +31,13 @@ class AppTheme {
           fontFamily: 'Inter',
           fontWeight: FontWeight.w600,
         ),
-        titleLarge: TextStyle(
-          fontFamily: 'Inter',
-          fontWeight: FontWeight.w600,
-        ),
+        titleLarge: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w600),
         titleMedium: TextStyle(
           fontFamily: 'Inter',
           fontWeight: FontWeight.w500,
         ),
-        bodyLarge: TextStyle(
-          fontFamily: 'Inter',
-          fontWeight: FontWeight.w400,
-        ),
-        bodyMedium: TextStyle(
-          fontFamily: 'Inter',
-          fontWeight: FontWeight.w400,
-        ),
+        bodyLarge: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w400),
+        bodyMedium: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w400),
       ),
 
       appBarTheme: const AppBarTheme(

@@ -14,6 +14,7 @@ class NotificationService {
   // Use dynamic to avoid analyzer errors when the package API surface
   // differs between versions. Calls are still performed at runtime.
   final dynamic _plugin = FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
 
   static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
     'bills_channel',
@@ -23,6 +24,10 @@ class NotificationService {
   );
 
   Future<void> init() async {
+    if (_initialized) {
+      return;
+    }
+
     // Initialize timezone database.
     tzdata.initializeTimeZones();
 
@@ -70,6 +75,16 @@ class NotificationService {
 
     // Permission for exact alarms.
     await androidPlugin?.requestExactAlarmsPermission();
+    _initialized = true;
+  }
+
+  static int buildReminderId(String title, DateTime dueDate) {
+    var hash = 17;
+    final value = '$title|${dueDate.toIso8601String()}';
+    for (final codeUnit in value.codeUnits) {
+      hash = (hash * 31 + codeUnit) & 0x7fffffff;
+    }
+    return hash == 0 ? 1 : hash;
   }
 
   void _onNotificationResponse(NotificationResponse response) {
@@ -82,6 +97,9 @@ class NotificationService {
     required String body,
     required DateTime scheduledDate,
   }) async {
+    await init();
+    await _plugin.cancel(id: id);
+
     final androidDetails = AndroidNotificationDetails(
       _channel.id,
       _channel.name,
@@ -123,15 +141,27 @@ class NotificationService {
     }
 
     // Schedule the notification.
-    await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: tzScheduledDate,
-      notificationDetails: details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: id.toString(),
-    );
+    try {
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: tzScheduledDate,
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: id.toString(),
+      );
+    } catch (_) {
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: tzScheduledDate,
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: id.toString(),
+      );
+    }
   }
 
   Future<void> cancel(int id) async {

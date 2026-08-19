@@ -31,7 +31,7 @@ class BillsApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF080A0F),
+        scaffoldBackgroundColor: Colors.black,
         textTheme: GoogleFonts.googleSansTextTheme(ThemeData.dark().textTheme),
       ),
       home: const HomeScreen(),
@@ -83,6 +83,50 @@ class Bill {
   }
 }
 
+bool matchesDateFilter(DateTime billDate, DateTime? selectedDate) {
+  if (selectedDate == null) {
+    return true;
+  }
+
+  final billDay = DateTime(billDate.year, billDate.month, billDate.day);
+  final pickedDay = DateTime(
+    selectedDate.year,
+    selectedDate.month,
+    selectedDate.day,
+  );
+
+  return billDay == pickedDay;
+}
+
+String cleanAmountInput(String value) => value.replaceAll(',', '').trim();
+
+double? parseAmountInput(String value) {
+  final cleaned = cleanAmountInput(value);
+  if (cleaned.isEmpty) {
+    return null;
+  }
+  return double.tryParse(cleaned);
+}
+
+String formatCurrency(double value) {
+  final normalized = value.toStringAsFixed(value % 1 == 0 ? 0 : 2);
+  final parts = normalized.split('.');
+  final integer = parts.first;
+  final decimals = parts.length > 1 ? '.${parts[1]}' : '';
+  final digits = integer.split('').reversed.toList();
+  final buffer = StringBuffer();
+
+  for (var i = 0; i < digits.length; i++) {
+    if (i > 0 && i % 3 == 0) {
+      buffer.write(',');
+    }
+    buffer.write(digits[i]);
+  }
+
+  final reverse = buffer.toString().split('').reversed.join();
+  return '$reverse$decimals';
+}
+
 // ============================================================
 // HOME SCREEN
 // ============================================================
@@ -96,6 +140,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final List<Bill> bills = [];
+  DateTime? selectedDateFilter;
+
+  List<Bill> get filteredBills {
+    if (selectedDateFilter == null) {
+      return bills;
+    }
+
+    return bills
+        .where((bill) => matchesDateFilter(bill.dueDate, selectedDateFilter))
+        .toList();
+  }
 
   Future<void> _openSupportEmail() async {
     final Uri emailUri = Uri(
@@ -107,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await launchUrl(emailUri);
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not open email client')),
         );
@@ -118,16 +173,16 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-
     _loadBills();
   }
 
   Future<void> _loadBills() async {
     final saved = await StorageService().loadBills();
     if (saved.isEmpty) {
-      // No saved bills — leave the list empty.
       return;
     }
+
+    if (!mounted) return;
 
     setState(() {
       bills.addAll(saved.map(Bill.fromMap));
@@ -139,33 +194,120 @@ class _HomeScreenState extends State<HomeScreen> {
     await StorageService().saveBills(maps);
   }
 
-  // ==========================================================
-  // ADD BILL
-  // ==========================================================
-
-  void openAddBillPage() async {
-    final Bill? newBill = await Navigator.push<Bill>(
-      context,
-      MaterialPageRoute(builder: (context) => const AddBillScreen()),
+  Future<void> _pickDateFilter() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDateFilter ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      helpText: 'Select a date',
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.white,
+              onPrimary: Colors.black,
+              surface: Color(0xFF111111),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
 
-    if (newBill != null) {
+    if (picked == null) {
+      return;
+    }
+
+    setState(() {
+      selectedDateFilter = picked;
+    });
+  }
+
+  Future<void> openAddBillPage({Bill? billToEdit}) async {
+    final Bill? newBill = await Navigator.push<Bill>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddBillScreen(initialBill: billToEdit),
+      ),
+    );
+
+    if (newBill == null) {
+      return;
+    }
+
+    if (billToEdit != null) {
+      final index = bills.indexWhere(
+        (existing) =>
+            existing.title == billToEdit.title &&
+            existing.dueDate.isAtSameMomentAs(billToEdit.dueDate),
+      );
+
+      if (index != -1) {
+        setState(() {
+          bills[index] = newBill;
+        });
+      }
+    } else {
       setState(() {
         bills.add(newBill);
       });
-      await _saveAllBills();
     }
+
+    final oldReminderId = billToEdit == null
+        ? null
+        : NotificationService.buildReminderId(
+            billToEdit.title,
+            billToEdit.dueDate,
+          );
+    final newReminderId = NotificationService.buildReminderId(
+      newBill.title,
+      newBill.dueDate,
+    );
+
+    if (oldReminderId != null && oldReminderId != newReminderId) {
+      await NotificationService().cancel(oldReminderId);
+    }
+
+    if (newBill.reminderEnabled) {
+      await NotificationService().scheduleReminder(
+        id: newReminderId,
+        title: 'Bill due: ${newBill.title}',
+        body: '${newBill.description} — ₹${formatCurrency(newBill.amount)}',
+        scheduledDate: DateTime(
+          newBill.dueDate.year,
+          newBill.dueDate.month,
+          newBill.dueDate.day,
+          9,
+          0,
+        ),
+      );
+    } else if (oldReminderId != null && oldReminderId == newReminderId) {
+      await NotificationService().cancel(newReminderId);
+    }
+
+    await _saveAllBills();
   }
 
-  // ==========================================================
-  // DELETE BILL
-  // ==========================================================
+  Future<void> deleteBill(Bill bill) async {
+    final index = bills.indexOf(bill);
+    if (index == -1) return;
 
-  void deleteBill(int index) {
     setState(() {
       bills.removeAt(index);
     });
-    _saveAllBills();
+
+    if (bill.reminderEnabled) {
+      final reminderId = NotificationService.buildReminderId(
+        bill.title,
+        bill.dueDate,
+      );
+      await NotificationService().cancel(reminderId);
+    }
+
+    await _saveAllBills();
+
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -174,10 +316,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-  // ==========================================================
-  // FORMAT DATE
-  // ==========================================================
 
   String formatDate(DateTime date) {
     const months = [
@@ -194,54 +332,34 @@ class _HomeScreenState extends State<HomeScreen> {
       'Nov',
       'Dec',
     ];
-
     return '${date.day} ${months[date.month - 1]}';
   }
 
-  // ==========================================================
-  // TOTAL AMOUNT
-  // ==========================================================
-
   double get totalAmount {
     double total = 0;
-
-    for (final bill in bills) {
+    for (final bill in filteredBills) {
       total += bill.amount;
     }
-
     return total;
   }
-
-  // ==========================================================
-  // BUILD
-  // ==========================================================
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF080A0F),
-
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Background
           const AppBackground(),
-
           SafeArea(
             child: Column(
               children: [
-                // =================================================
-                // HEADER
-                // =================================================
-
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
-
                   child: Row(
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-
                           children: [
                             Text(
                               'Bills',
@@ -251,9 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 letterSpacing: -1,
                               ),
                             ),
-
                             const SizedBox(height: 4),
-
                             Text(
                               'Keep your payments on track',
                               style: GoogleFonts.googleSans(
@@ -264,97 +380,166 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-
-                      GlassIconButton(
-                        icon: Icons.notifications_none_rounded,
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Notifications will appear here'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.10),
+                          ),
+                        ),
+                        child: Text(
+                          '${bills.length} total',
+                          style: GoogleFonts.googleSans(
+                            fontSize: 12,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 10),
-
-                // =================================================
-                // TOTAL CARD
-                // =================================================
+                const SizedBox(height: 8),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-
+                  child: GestureDetector(
+                    onTap: _pickDateFilter,
+                    child: GlassContainer(
+                      borderRadius: 18,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.calendar_month_rounded,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Date filter',
+                                  style: GoogleFonts.googleSans(
+                                    fontSize: 11,
+                                    color: Colors.white54,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  selectedDateFilter == null
+                                      ? 'All dates'
+                                      : formatFullDate(selectedDateFilter!),
+                                  style: GoogleFonts.googleSans(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (selectedDateFilter != null)
+                            GestureDetector(
+                              onTap: () =>
+                                  setState(() => selectedDateFilter = null),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  'Clear',
+                                  style: GoogleFonts.googleSans(
+                                    fontSize: 11,
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            color: Colors.white38,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: GlassContainer(
                     borderRadius: 24,
-
                     child: Row(
                       children: [
                         Container(
-                          width: 54,
-                          height: 54,
-
+                          width: 52,
+                          height: 52,
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.09),
-
-                            borderRadius: BorderRadius.circular(17),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-
                           child: const Icon(
                             Icons.account_balance_wallet_outlined,
                             color: Colors.white,
-                            size: 25,
+                            size: 24,
                           ),
                         ),
-
-                        const SizedBox(width: 16),
-
+                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-
                             children: [
                               Text(
-                                'Total upcoming',
+                                'Total selected',
                                 style: GoogleFonts.googleSans(
-                                  fontSize: 13,
+                                  fontSize: 12,
                                   color: Colors.white54,
                                 ),
                               ),
-
                               const SizedBox(height: 4),
-
                               Text(
-                                '₹${totalAmount.toStringAsFixed(0)}',
+                                '₹${formatCurrency(totalAmount)}',
                                 style: GoogleFonts.googleSans(
-                                  fontSize: 26,
+                                  fontSize: 24,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
                           ),
                         ),
-
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 11,
+                            horizontal: 10,
                             vertical: 7,
                           ),
-
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.07),
-
                             borderRadius: BorderRadius.circular(12),
                           ),
-
                           child: Text(
-                            '${bills.length} bills',
+                            '${filteredBills.length} ${filteredBills.length == 1 ? 'bill' : 'bills'}',
                             style: GoogleFonts.googleSans(
                               fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                               color: Colors.white70,
                             ),
                           ),
@@ -363,97 +548,76 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-
-                const SizedBox(height: 28),
-
-                // =================================================
-                // UPCOMING TITLE
-                // =================================================
+                const SizedBox(height: 20),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-
                   child: Row(
                     children: [
                       Text(
                         'Upcoming bills',
                         style: GoogleFonts.googleSans(
-                          fontSize: 19,
+                          fontSize: 18,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-
                       const Spacer(),
-
                       Text(
-                        '${bills.length}',
+                        selectedDateFilter == null
+                            ? '${bills.length}'
+                            : '${filteredBills.length}',
                         style: GoogleFonts.googleSans(
-                          fontSize: 14,
+                          fontSize: 13,
                           color: Colors.white38,
                         ),
                       ),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 14),
-
-                // =================================================
-                // BILL LIST
-                // =================================================
+                const SizedBox(height: 12),
                 Expanded(
-                  child: bills.isEmpty
-                      ? EmptyBillsView(onAddBill: openAddBillPage)
+                  child: filteredBills.isEmpty
+                      ? EmptyBillsView(onAddBill: () => openAddBillPage())
                       : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 110),
-
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 90),
                           physics: const BouncingScrollPhysics(),
-
-                          itemCount: bills.length,
-
+                          itemCount: filteredBills.length,
                           itemBuilder: (context, index) {
-                            final bill = bills[index];
+                            final bill = filteredBills[index];
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 14),
-
                               child: BillCard(
                                 bill: bill,
-
                                 dueDate: formatDate(bill.dueDate),
-
                                 onReminderChanged: (value) async {
                                   setState(() {
                                     bill.reminderEnabled = value;
                                   });
 
+                                  final reminderId =
+                                      NotificationService.buildReminderId(
+                                        bill.title,
+                                        bill.dueDate,
+                                      );
+
                                   if (value) {
-                                    // schedule at 9:00 AM on due date
-                                    final scheduled = DateTime(
-                                      bill.dueDate.year,
-                                      bill.dueDate.month,
-                                      bill.dueDate.day,
-                                      9,
-                                      0,
-                                    );
-
-                                    final id = bill
-                                        .dueDate
-                                        .millisecondsSinceEpoch
-                                        .remainder(1 << 31);
-
                                     await NotificationService().scheduleReminder(
-                                      id: id,
+                                      id: reminderId,
                                       title: 'Bill due: ${bill.title}',
                                       body:
-                                          '${bill.description} — ₹${bill.amount.toStringAsFixed(0)}',
-                                      scheduledDate: scheduled,
+                                          '${bill.description} — ₹${formatCurrency(bill.amount)}',
+                                      scheduledDate: DateTime(
+                                        bill.dueDate.year,
+                                        bill.dueDate.month,
+                                        bill.dueDate.day,
+                                        9,
+                                        0,
+                                      ),
                                     );
                                   } else {
-                                    final id = bill
-                                        .dueDate
-                                        .millisecondsSinceEpoch
-                                        .remainder(1 << 31);
-                                    await NotificationService().cancel(id);
+                                    await NotificationService().cancel(
+                                      reminderId,
+                                    );
                                   }
 
                                   await _saveAllBills();
@@ -471,10 +635,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   );
                                 },
-
-                                onDelete: () {
-                                  deleteBill(index);
-                                },
+                                onDelete: () async => deleteBill(bill),
+                                onEdit: () => openAddBillPage(billToEdit: bill),
                               ),
                             );
                           },
@@ -485,24 +647,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-
-      // =========================================================
-      // ADD BUTTON
-      // =========================================================
       floatingActionButton: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-
+          padding: const EdgeInsets.only(bottom: 12),
           child: FloatingActionButton.extended(
-            onPressed: openAddBillPage,
-
+            onPressed: () => openAddBillPage(),
             backgroundColor: Colors.white,
             foregroundColor: Colors.black,
-
             elevation: 8,
-
             icon: const Icon(Icons.add_rounded),
-
             label: Text(
               'Add Bill',
               style: GoogleFonts.googleSans(fontWeight: FontWeight.w600),
@@ -512,26 +665,30 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextButton(
                 onPressed: _openSupportEmail,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 child: Text(
                   'Support',
                   style: GoogleFonts.googleSans(
-                    fontSize: 14,
+                    fontSize: 12,
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              const SizedBox(height: 2),
               Text(
                 'Developed by Bhuvy',
                 style: GoogleFonts.googleSans(
-                  fontSize: 12,
+                  fontSize: 10,
                   color: Colors.white54,
                 ),
               ),
@@ -551,7 +708,8 @@ class BillCard extends StatelessWidget {
   final Bill bill;
   final String dueDate;
   final ValueChanged<bool> onReminderChanged;
-  final VoidCallback onDelete;
+  final Future<void> Function() onDelete;
+  final VoidCallback onEdit;
 
   const BillCard({
     super.key,
@@ -559,6 +717,7 @@ class BillCard extends StatelessWidget {
     required this.dueDate,
     required this.onReminderChanged,
     required this.onDelete,
+    required this.onEdit,
   });
 
   @override
@@ -569,8 +728,8 @@ class BillCard extends StatelessWidget {
       direction: DismissDirection.endToStart,
 
       confirmDismiss: (direction) async {
-        onDelete();
-        return false;
+        await onDelete();
+        return true;
       },
 
       background: Container(
@@ -660,26 +819,36 @@ class BillCard extends StatelessWidget {
 
                 const SizedBox(width: 10),
 
-                // Amount
+                // Amount and edit action
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
-
                   children: [
-                    Text(
-                      '₹${bill.amount.toStringAsFixed(0)}',
-
-                      style: GoogleFonts.googleSans(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '₹${bill.amount.toStringAsFixed(0)}',
+                          style: GoogleFonts.googleSans(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: onEdit,
+                          tooltip: 'Edit bill',
+                          icon: const Icon(Icons.edit_outlined, size: 17),
+                          color: Colors.white54,
+                          padding: const EdgeInsets.only(left: 8),
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
+                          ),
+                        ),
+                      ],
                     ),
-
-                    const SizedBox(height: 4),
-
                     Text(
                       'amount',
-
                       style: GoogleFonts.googleSans(
                         fontSize: 10,
                         color: Colors.white30,
@@ -814,7 +983,9 @@ class BillCard extends StatelessWidget {
 // ============================================================
 
 class AddBillScreen extends StatefulWidget {
-  const AddBillScreen({super.key});
+  final Bill? initialBill;
+
+  const AddBillScreen({super.key, this.initialBill});
 
   @override
   State<AddBillScreen> createState() => _AddBillScreenState();
@@ -830,6 +1001,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
   DateTime? selectedDate;
 
   int selectedIcon = Icons.receipt_long_rounded.codePoint;
+  bool reminderEnabled = false;
 
   final List<int> icons = [
     Icons.receipt_long_rounded.codePoint,
@@ -851,6 +1023,22 @@ class _AddBillScreenState extends State<AddBillScreen> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+    final bill = widget.initialBill;
+    if (bill == null) {
+      return;
+    }
+
+    titleController.text = bill.title;
+    descriptionController.text = bill.description;
+    amountController.text = cleanAmountInput(bill.amount.toString());
+    selectedDate = bill.dueDate;
+    selectedIcon = bill.iconCodePoint;
+    reminderEnabled = bill.reminderEnabled;
+  }
+
   // ==========================================================
   // DATE PICKER
   // ==========================================================
@@ -861,7 +1049,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
       initialDate: selectedDate ?? DateTime.now(),
 
-      firstDate: DateTime.now(),
+      firstDate: widget.initialBill == null ? DateTime.now() : DateTime(2000),
 
       lastDate: DateTime(2100),
 
@@ -915,6 +1103,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
       amount: amount,
       dueDate: selectedDate!,
       iconCodePoint: selectedIcon,
+      reminderEnabled: reminderEnabled,
     );
 
     Navigator.pop(context, bill);
@@ -956,7 +1145,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
                       const SizedBox(width: 14),
 
                       Text(
-                        'Add Bill',
+                        widget.initialBill == null ? 'Add Bill' : 'Edit Bill',
                         style: GoogleFonts.googleSans(
                           fontSize: 21,
                           fontWeight: FontWeight.w600,
@@ -978,7 +1167,9 @@ class _AddBillScreenState extends State<AddBillScreen> {
 
                       children: [
                         Text(
-                          'Create a new bill',
+                          widget.initialBill == null
+                              ? 'Create a new bill'
+                              : 'Update your bill',
                           style: GoogleFonts.googleSans(
                             fontSize: 28,
                             fontWeight: FontWeight.w700,
@@ -1193,7 +1384,9 @@ class _AddBillScreenState extends State<AddBillScreen> {
                             ),
 
                             child: Text(
-                              'Save Bill',
+                              widget.initialBill == null
+                                  ? 'Save Bill'
+                                  : 'Update Bill',
                               style: GoogleFonts.googleSans(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w600,
@@ -1378,55 +1571,7 @@ class AppBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-
-              end: Alignment.bottomRight,
-
-              colors: [Color(0xFF10151E), Color(0xFF080A0F), Color(0xFF0D0D15)],
-            ),
-          ),
-        ),
-
-        // Blue glow
-        Positioned(
-          top: -100,
-          right: -100,
-
-          child: Container(
-            width: 300,
-            height: 300,
-
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-
-              color: Colors.blue.withValues(alpha: 0.10),
-            ),
-          ),
-        ),
-
-        // Purple glow
-        Positioned(
-          bottom: -150,
-          left: -100,
-
-          child: Container(
-            width: 320,
-            height: 320,
-
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-
-              color: Colors.purple.withValues(alpha: 0.08),
-            ),
-          ),
-        ),
-      ],
-    );
+    return const ColoredBox(color: Colors.black);
   }
 }
 
