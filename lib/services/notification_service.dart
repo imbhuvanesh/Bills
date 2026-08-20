@@ -1,6 +1,5 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-// Removed flutter_timezone import due to dependency mismatch; using a
-// best-effort local timezone fallback.
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -32,14 +31,16 @@ class NotificationService {
     // Initialize timezone database.
     tzdata.initializeTimeZones();
 
-    // Attempt to set the local timezone from the system. `DateTime.now()`
-    // provides a time zone name which may be an abbreviation; if mapping
-    // fails, fall back to a sensible default.
+    // Match scheduled reminders against the phone's current local timezone.
     try {
-      final name = DateTime.now().timeZoneName;
-      tz.setLocalLocation(tz.getLocation(name));
-    } catch (e) {
-      tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+      final timezone = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timezone.identifier));
+    } catch (_) {
+      try {
+        tz.setLocalLocation(tz.getLocation(DateTime.now().timeZoneName));
+      } catch (_) {
+        tz.setLocalLocation(tz.getLocation('Asia/Kolkata'));
+      }
     }
 
     const androidSettings = AndroidInitializationSettings(
@@ -124,14 +125,12 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    // Convert the DateTime into the device's timezone.
-    final tzScheduledDate = tz.TZDateTime.from(scheduledDate, tz.local);
-
-    final now = tz.TZDateTime.now(tz.local);
+    final tzScheduledDate = _toLocalMinute(scheduledDate);
+    final now = _toLocalMinute(tz.TZDateTime.now(tz.local));
 
     // If the requested time is already passed,
     // show the notification immediately.
-    if (!tzScheduledDate.isAfter(now.add(const Duration(seconds: 2)))) {
+    if (!tzScheduledDate.isAfter(now)) {
       await _plugin.show(
         id: id,
         title: title,
@@ -176,5 +175,17 @@ class NotificationService {
 
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
     return await _plugin.pendingNotificationRequests();
+  }
+
+  static tz.TZDateTime _toLocalMinute(DateTime date) {
+    final localDate = tz.TZDateTime.from(date, tz.local);
+    return tz.TZDateTime(
+      tz.local,
+      localDate.year,
+      localDate.month,
+      localDate.day,
+      localDate.hour,
+      localDate.minute,
+    );
   }
 }

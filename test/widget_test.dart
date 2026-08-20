@@ -66,4 +66,22 @@ void main() {
 
     expect(reloadedBills, [retainedBill.toMap()]);
   });
+
+  test('completed status persists after storage is reloaded', () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService();
+    final bill = Bill(
+      title: 'Rent',
+      description: 'Apartment',
+      amount: 2500,
+      dueDate: DateTime(2026, 8, 19),
+      iconCodePoint: 0,
+      isCompleted: true,
+    );
+
+    await storage.saveBills([bill.toMap()]);
+    final reloadedBills = await storage.loadBills();
+
+    expect(Bill.fromMap(reloadedBills.single).isCompleted, isTrue);
+  });
 }

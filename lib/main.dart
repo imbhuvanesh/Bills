@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -47,6 +48,7 @@ class Bill {
   DateTime dueDate;
   int iconCodePoint;
   bool reminderEnabled;
+  bool isCompleted;
 
   Bill({
     required this.title,
@@ -55,6 +57,7 @@ class Bill {
     required this.dueDate,
     required this.iconCodePoint,
     this.reminderEnabled = false,
+    this.isCompleted = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -65,6 +68,7 @@ class Bill {
       'dueDate': dueDate.toIso8601String(),
       'iconCodePoint': iconCodePoint,
       'reminderEnabled': reminderEnabled,
+      'isCompleted': isCompleted,
     };
   }
 
@@ -76,6 +80,7 @@ class Bill {
       dueDate: DateTime.parse(m['dueDate'] as String),
       iconCodePoint: m['iconCodePoint'] as int,
       reminderEnabled: m['reminderEnabled'] as bool? ?? false,
+      isCompleted: m['isCompleted'] as bool? ?? false,
     );
   }
 }
@@ -145,9 +150,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final List<Bill> bills = [];
   final TextEditingController searchController = TextEditingController();
+  Timer? reminderSyncTimer;
   DateTime? selectedDateFilter;
 
   List<Bill> get filteredBills {
@@ -162,8 +168,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    reminderSyncTimer?.cancel();
     searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncTriggeredReminders();
+    }
   }
 
   Future<void> _openSupportEmail() async {
@@ -187,6 +202,11 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    reminderSyncTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _syncTriggeredReminders(),
+    );
     _loadBills();
   }
 
@@ -201,6 +221,38 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       bills.addAll(saved.map(Bill.fromMap));
     });
+
+    await _syncTriggeredReminders();
+  }
+
+  Future<void> _syncTriggeredReminders() async {
+    final now = DateTime.now();
+    var changed = false;
+
+    for (final bill in bills) {
+      final reminderDate = DateTime(
+        bill.dueDate.year,
+        bill.dueDate.month,
+        bill.dueDate.day,
+        9,
+      );
+
+      if (bill.reminderEnabled &&
+          !bill.isCompleted &&
+          !reminderDate.isAfter(now)) {
+        bill.isCompleted = true;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    if (mounted) {
+      setState(() {});
+    }
+    await _saveAllBills();
   }
 
   Future<void> _saveAllBills() async {
@@ -687,6 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   }
 
                                   await _saveAllBills();
+                                  await _syncTriggeredReminders();
 
                                   if (!context.mounted) return;
 
@@ -703,6 +756,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 },
                                 onDelete: () async => deleteBill(bill),
                                 onEdit: () => openAddBillPage(billToEdit: bill),
+                                onCompletionChanged: (value) async {
+                                  setState(() {
+                                    bill.isCompleted = value;
+                                  });
+                                  await _saveAllBills();
+                                },
                               ),
                             );
                           },
@@ -786,6 +845,7 @@ class BillCard extends StatefulWidget {
   final Bill bill;
   final String dueDate;
   final ValueChanged<bool> onReminderChanged;
+  final ValueChanged<bool> onCompletionChanged;
   final Future<void> Function() onDelete;
   final VoidCallback onEdit;
 
@@ -794,6 +854,7 @@ class BillCard extends StatefulWidget {
     required this.bill,
     required this.dueDate,
     required this.onReminderChanged,
+    required this.onCompletionChanged,
     required this.onDelete,
     required this.onEdit,
   });
@@ -950,11 +1011,51 @@ class _BillCardState extends State<BillCard>
                                 color: Colors.white54,
                               ),
                             ),
+
+                            if (widget.bill.isCompleted) ...[
+                              const SizedBox(height: 7),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Completed',
+                                  style: GoogleFonts.googleSans(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.greenAccent,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
 
                       const SizedBox(width: 10),
+
+                      IconButton(
+                        tooltip: widget.bill.isCompleted
+                            ? 'Mark as incomplete'
+                            : 'Mark as completed',
+                        onPressed: () => widget.onCompletionChanged(
+                          !widget.bill.isCompleted,
+                        ),
+                        icon: Icon(
+                          widget.bill.isCompleted
+                              ? Icons.check_circle_rounded
+                              : Icons.check_circle_outline_rounded,
+                          color: widget.bill.isCompleted
+                              ? Colors.greenAccent
+                              : Colors.white54,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
 
                       // Amount
                       Column(
@@ -1290,6 +1391,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
       dueDate: selectedDate!,
       iconCodePoint: selectedIcon,
       reminderEnabled: reminderEnabled,
+      isCompleted: widget.initialBill?.isCompleted ?? false,
     );
 
     Navigator.pop(context, bill);
