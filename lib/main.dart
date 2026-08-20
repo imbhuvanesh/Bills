@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -49,6 +48,8 @@ class Bill {
   int iconCodePoint;
   bool reminderEnabled;
   bool isCompleted;
+  int reminderHour;
+  int reminderMinute;
 
   Bill({
     required this.title,
@@ -58,6 +59,8 @@ class Bill {
     required this.iconCodePoint,
     this.reminderEnabled = false,
     this.isCompleted = false,
+    this.reminderHour = 0,
+    this.reminderMinute = 0,
   });
 
   Map<String, dynamic> toMap() {
@@ -69,6 +72,8 @@ class Bill {
       'iconCodePoint': iconCodePoint,
       'reminderEnabled': reminderEnabled,
       'isCompleted': isCompleted,
+      'reminderHour': reminderHour,
+      'reminderMinute': reminderMinute,
     };
   }
 
@@ -81,6 +86,8 @@ class Bill {
       iconCodePoint: m['iconCodePoint'] as int,
       reminderEnabled: m['reminderEnabled'] as bool? ?? false,
       isCompleted: m['isCompleted'] as bool? ?? false,
+      reminderHour: m['reminderHour'] as int? ?? 0,
+      reminderMinute: m['reminderMinute'] as int? ?? 0,
     );
   }
 }
@@ -153,7 +160,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final List<Bill> bills = [];
   final TextEditingController searchController = TextEditingController();
-  Timer? reminderSyncTimer;
   DateTime? selectedDateFilter;
 
   List<Bill> get filteredBills {
@@ -169,7 +175,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    reminderSyncTimer?.cancel();
     searchController.dispose();
     super.dispose();
   }
@@ -203,11 +208,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    reminderSyncTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _syncTriggeredReminders(),
-    );
+    NotificationService().setAlarmTriggeredCallback(_completeBillForAlarm);
     _loadBills();
+  }
+
+  Future<void> _completeBillForAlarm(int alarmId) async {
+    if (!mounted) {
+      return;
+    }
+
+    final billIndex = bills.indexWhere(
+      (bill) =>
+          NotificationService.buildReminderId(bill.title, bill.dueDate) ==
+          alarmId,
+    );
+
+    if (billIndex == -1 || bills[billIndex].isCompleted) {
+      return;
+    }
+
+    setState(() {
+      bills[billIndex].isCompleted = true;
+    });
+    await _saveAllBills();
   }
 
   Future<void> _loadBills() async {
@@ -234,7 +257,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         bill.dueDate.year,
         bill.dueDate.month,
         bill.dueDate.day,
-        9,
+        bill.reminderHour,
+        bill.reminderMinute,
       );
 
       if (bill.reminderEnabled &&
@@ -344,8 +368,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           newBill.dueDate.year,
           newBill.dueDate.month,
           newBill.dueDate.day,
-          9,
-          0,
+          newBill.reminderHour,
+          newBill.reminderMinute,
         ),
       );
     } else if (oldReminderId != null && oldReminderId == newReminderId) {
@@ -728,8 +752,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         bill.dueDate.year,
                                         bill.dueDate.month,
                                         bill.dueDate.day,
-                                        9,
-                                        0,
+                                        bill.reminderHour,
+                                        bill.reminderMinute,
                                       ),
                                     );
                                   } else {
@@ -1286,6 +1310,7 @@ class _AddBillScreenState extends State<AddBillScreen> {
   final TextEditingController amountController = TextEditingController();
 
   DateTime? selectedDate;
+  TimeOfDay selectedReminderTime = const TimeOfDay(hour: 0, minute: 0);
 
   int selectedIcon = Icons.receipt_long_rounded.codePoint;
   bool reminderEnabled = false;
@@ -1324,6 +1349,10 @@ class _AddBillScreenState extends State<AddBillScreen> {
     selectedDate = bill.dueDate;
     selectedIcon = bill.iconCodePoint;
     reminderEnabled = bill.reminderEnabled;
+    selectedReminderTime = TimeOfDay(
+      hour: bill.reminderHour,
+      minute: bill.reminderMinute,
+    );
   }
 
   // ==========================================================
@@ -1362,6 +1391,19 @@ class _AddBillScreenState extends State<AddBillScreen> {
     }
   }
 
+  Future<void> pickReminderTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: selectedReminderTime,
+    );
+
+    if (picked != null) {
+      setState(() {
+        selectedReminderTime = picked;
+      });
+    }
+  }
+
   // ==========================================================
   // SAVE BILL
   // ==========================================================
@@ -1392,6 +1434,8 @@ class _AddBillScreenState extends State<AddBillScreen> {
       iconCodePoint: selectedIcon,
       reminderEnabled: reminderEnabled,
       isCompleted: widget.initialBill?.isCompleted ?? false,
+      reminderHour: selectedReminderTime.hour,
+      reminderMinute: selectedReminderTime.minute,
     );
 
     Navigator.pop(context, bill);
@@ -1581,6 +1625,60 @@ class _AddBillScreenState extends State<AddBillScreen> {
                                   ),
                                 ),
 
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.white38,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        GestureDetector(
+                          onTap: pickReminderTime,
+                          child: GlassContainer(
+                            borderRadius: 18,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 46,
+                                  height: 46,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.07),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Icon(
+                                    Icons.access_time_rounded,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Reminder time',
+                                        style: GoogleFonts.googleSans(
+                                          fontSize: 12,
+                                          color: Colors.white54,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        selectedReminderTime.format(context),
+                                        style: GoogleFonts.googleSans(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                                 const Icon(
                                   Icons.chevron_right_rounded,
                                   color: Colors.white38,
