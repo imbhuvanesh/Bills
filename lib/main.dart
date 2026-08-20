@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:bills/services/storage_service.dart';
 import 'package:bills/services/notification_service.dart';
+import 'package:bills/theme/app_theme.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
@@ -29,12 +30,7 @@ class BillsApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Bills',
 
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.black,
-        textTheme: GoogleFonts.googleSansTextTheme(ThemeData.dark().textTheme),
-      ),
+      theme: AppTheme.theme,
       home: const HomeScreen(),
     );
   }
