@@ -43,9 +43,10 @@ dependencies:
   google_fonts: ^8.2.1
   flutter_timezone: ^5.1.0
   shared_preferences: ^2.1.1
-  timezone: ^0.11.1
   url_launcher: ^6.1.10
   alarm_volume_control: ^1.0.0
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

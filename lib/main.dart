@@ -182,7 +182,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _syncTriggeredReminders();
+      _processPendingAlarmCompletions();
     }
   }
 
@@ -208,29 +208,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    NotificationService().setAlarmTriggeredCallback(_completeBillForAlarm);
+    NotificationService().onTurnOff = _handleAlarmTurnOff;
     _loadBills();
   }
 
-  Future<void> _completeBillForAlarm(int alarmId) async {
-    if (!mounted) {
-      return;
-    }
-
+  void _handleAlarmTurnOff(int alarmId) {
+    if (!mounted) return;
     final billIndex = bills.indexWhere(
       (bill) =>
+          !bill.isCompleted &&
           NotificationService.buildReminderId(bill.title, bill.dueDate) ==
-          alarmId,
+              alarmId,
     );
-
-    if (billIndex == -1 || bills[billIndex].isCompleted) {
-      return;
-    }
-
+    if (billIndex == -1) return;
     setState(() {
       bills[billIndex].isCompleted = true;
     });
-    await _saveAllBills();
+    _saveAllBills();
   }
 
   Future<void> _loadBills() async {
@@ -245,37 +239,34 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       bills.addAll(saved.map(Bill.fromMap));
     });
 
-    await _syncTriggeredReminders();
+    await _processPendingAlarmCompletions();
   }
 
-  Future<void> _syncTriggeredReminders() async {
-    final now = DateTime.now();
+  Future<void> _processPendingAlarmCompletions() async {
+    final ns = NotificationService();
+    final stoppedIds = ns.consumeStoppedAlarmIds();
+    final activeIds = ns.getActiveAlarmIds();
+
+    if (bills.isEmpty) return;
+
     var changed = false;
-
     for (final bill in bills) {
-      final reminderDate = DateTime(
-        bill.dueDate.year,
-        bill.dueDate.month,
-        bill.dueDate.day,
-        bill.reminderHour,
-        bill.reminderMinute,
-      );
+      if (bill.isCompleted || !bill.reminderEnabled) continue;
 
-      if (bill.reminderEnabled &&
-          !bill.isCompleted &&
-          !reminderDate.isAfter(now)) {
+      final reminderId =
+          NotificationService.buildReminderId(bill.title, bill.dueDate);
+
+      final wasStopped = stoppedIds.contains(reminderId);
+      final notScheduled = !activeIds.contains(reminderId);
+
+      if (wasStopped || notScheduled) {
         bill.isCompleted = true;
         changed = true;
       }
     }
 
-    if (!changed) {
-      return;
-    }
-
-    if (mounted) {
-      setState(() {});
-    }
+    if (!changed) return;
+    if (mounted) setState(() {});
     await _saveAllBills();
   }
 
@@ -732,6 +723,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 bill: bill,
                                 dueDate: formatDate(bill.dueDate),
                                 onReminderChanged: (value) async {
+                                  if (value) {
+                                    final granted =
+                                        await NotificationService()
+                                            .requestPermission();
+                                    if (!granted && context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'Notification permission is required for reminders. Please enable it in Settings.',
+                                          ),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                  }
+
                                   setState(() {
                                     bill.reminderEnabled = value;
                                   });
@@ -763,7 +772,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   }
 
                                   await _saveAllBills();
-                                  await _syncTriggeredReminders();
 
                                   if (!context.mounted) return;
 
@@ -844,11 +852,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       color: Colors.white38,
                     ),
                   ),
-                  Text(
-                    'bhuvy',
-                    style: GoogleFonts.googleSans(
-                      fontSize: 12,
-                      color: Colors.white54,
+                  GestureDetector(
+                    onTap: () => launchUrl(
+                      Uri.parse('https://imbhuvanesh.github.io/dev/'),
+                    ),
+                    child: Text(
+                      'bhuvy',
+                      style: GoogleFonts.googleSans(
+                        fontSize: 12,
+                        color: Colors.white54,
+                      ),
                     ),
                   ),
                 ],
